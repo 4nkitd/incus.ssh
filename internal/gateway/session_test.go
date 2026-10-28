@@ -171,7 +171,7 @@ func TestREPLUsesCRLFWithPTY(t *testing.T) {
 		t.Fatalf("status=%d", status)
 	}
 	got := out.String()
-	if !strings.Contains(got, "exit to disconnect.\r\n") || !strings.Contains(got, "arrow keys are unsupported.\r\n") {
+	if !strings.Contains(got, "exit to disconnect.\r\n") || !strings.Contains(got, "Up/Down: command history; Ctrl-L: clear; backspace: edit.\r\n") {
 		t.Fatalf("missing CRLF banner: %q", got)
 	}
 	if strings.Contains(strings.ReplaceAll(got, "\r\n", ""), "\n") {

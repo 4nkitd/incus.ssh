@@ -33,6 +33,10 @@ Unit tests use a fake Incus CLI. SSH integration tests use real loopback SSH con
 - Stop/start, stop/resume and restart, with filesystem markers retained.
 - Unsupported `pause` rejected. Test cleanup removed only the disposable containers and checked the final inventory.
 
+## Terminal controls
+
+Real SSH checks covered colored prompts/help, Up/Down command history, restoring an in-progress draft, `clear` and Ctrl-L. Separate regression tests verify that JSON, non-PTY output and guest byte streams are not decorated; command history is bounded and session-local. Server-side `NO_COLOR` disables colors without disabling Ctrl-L.
+
 Independent reviews covered setup validation and partial failure, SSH transport, ownership, capacity admission, lifecycle semantics and release archive contents. Review findings were fixed and regression-tested before the release.
 
 ## Website

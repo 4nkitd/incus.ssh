@@ -16,6 +16,7 @@ import (
 	"github.com/google/shlex"
 
 	"incus-for-devs/internal/core"
+	"incus-for-devs/internal/terminal"
 )
 
 const maxLineBytes = 16 * 1024
@@ -78,6 +79,8 @@ func (h Handler) Handle(ctx context.Context, p core.Principal, line string, s co
 			return writeJSON(s, p)
 		}
 		return writeText(s, "%s\t%s\n", p.Name, p.Project)
+	case "clear":
+		return clearScreen(s)
 	}
 	if h.Backend == nil {
 		return failure(s, r.json, errors.New("backend is not configured"))
@@ -91,7 +94,7 @@ func (h Handler) Handle(ctx context.Context, p core.Principal, line string, s co
 		if r.json {
 			return writeJSON(s, summary(vm))
 		}
-		return writeText(s, "%s\t%s\n", vm.Name, vm.Status)
+		return writeText(s, "%s\t%s\n", vm.Name, statusStyle(s, vm.Status))
 	case "ls":
 		vms, err := h.Backend.List(ctx, p)
 		if err != nil {
@@ -113,11 +116,13 @@ func (h Handler) Handle(ctx context.Context, p core.Principal, line string, s co
 			}{items})
 		}
 		for _, vm := range items {
+			name := terminal.Style(s, terminal.Bold+terminal.Cyan, vm.Name)
+			state := statusStyle(s, vm.Status)
 			var status int
 			if r.long {
-				status = writeText(s, "%s\t%s\t%s\t%s\t%s\t%s\n", vm.Name, vm.Status, vm.CPU, vm.Memory, vm.Processes, vm.Disk)
+				status = writeText(s, "%s\t%s\t%s\t%s\t%s\t%s\n", name, state, vm.CPU, vm.Memory, vm.Processes, vm.Disk)
 			} else {
-				status = writeText(s, "%s\t%s\n", vm.Name, vm.Status)
+				status = writeText(s, "%s\t%s\n", name, state)
 			}
 			if status != 0 {
 				return status
@@ -164,7 +169,7 @@ func (h Handler) remove(ctx context.Context, p core.Principal, r request, s core
 			continue
 		}
 		result.Removed = append(result.Removed, name)
-		if !r.json && writeText(s, "removed %s\n", name) != 0 {
+		if !r.json && writeText(s, "%s\n", terminal.Style(s, terminal.Yellow, "removed "+name)) != 0 {
 			status = 1
 		}
 	}
@@ -189,7 +194,33 @@ func (h Handler) lifecycle(ctx context.Context, p core.Principal, r request, s c
 			Name string `json:"vm_name"`
 		}{name})
 	}
-	return writeText(s, "%s %s\n", action, name)
+	if action == "stopped" {
+		return writeText(s, "%s %s\n", terminal.Style(s, terminal.Yellow, action), name)
+	}
+	return writeText(s, "%s %s\n", terminal.Style(s, terminal.Green, action), name)
+}
+
+// statusStyle keeps running green and every other reported status amber; it
+// never maps or invents a status of its own.
+func statusStyle(s core.Streams, status string) string {
+	if status == "Running" {
+		return terminal.Style(s, terminal.Green, status)
+	}
+	return terminal.Style(s, terminal.Yellow, status)
+}
+
+// The clear sequence is written verbatim: screen clearing must not grow CRLF
+// pairs or be suppressed by NO_COLOR, which only governs color.
+const clearSequence = "\x1b[2J\x1b[H"
+
+func clearScreen(s core.Streams) int {
+	if !s.PTY || s.Term == "" || s.Term == "dumb" {
+		return failure(s, false, errors.New("clear requires an interactive terminal"))
+	}
+	if err := writeOutputTo(s.Out, false, clearSequence); err != nil {
+		return failure(s, false, fmt.Errorf("write response: %w", err))
+	}
+	return 0
 }
 
 func parse(line string) (request, error) {
@@ -247,7 +278,7 @@ func parse(line string) (request, error) {
 		}
 		seen[flag] = true
 		switch {
-		case flag == "--json" && !hasValue:
+		case flag == "--json" && !hasValue && word != "clear":
 		case word == "ls" && flag == "-l" && !hasValue:
 			r.long = true
 		case word == "new" && hasValue:
@@ -284,7 +315,7 @@ func parse(line string) (request, error) {
 		}
 	}
 	switch word {
-	case "new", "whoami":
+	case "new", "whoami", "clear":
 		if len(r.args) != 0 {
 			return r, fmt.Errorf("%s does not accept positional arguments", word)
 		}
@@ -391,7 +422,7 @@ func validSize(value string) error {
 
 func unsupported(command string) error {
 	switch command {
-	case "help", "?", "whoami", "new", "ls", "rm", "resume", "start", "stop", "restart", "ssh":
+	case "help", "?", "whoami", "new", "ls", "clear", "rm", "resume", "start", "stop", "restart", "ssh":
 		return nil
 	case "pause":
 		return errors.New("pause is unsupported: Incus containers cannot promise exe.dev RAM-to-disk suspend; stop and freeze are not substitutes")
@@ -491,7 +522,7 @@ func failure(s core.Streams, asJSON bool, err error) int {
 			_ = writeOutputTo(s.Err, s.PTY, fmt.Sprintf("error: write response: %v\n", encodeErr))
 		}
 	} else {
-		if writeErr := writeOutputTo(s.Err, s.PTY, fmt.Sprintf("error: %v\n", err)); writeErr != nil {
+		if writeErr := writeOutputTo(s.Err, s.PTY, fmt.Sprintf("error: %s\n", terminal.Style(s, terminal.Red, err.Error()))); writeErr != nil {
 			return 1
 		}
 	}

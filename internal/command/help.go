@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"incus-for-devs/internal/core"
+	"incus-for-devs/internal/terminal"
 )
 
 type helpCommand struct {
@@ -18,6 +19,7 @@ var commands = []helpCommand{
 	{"whoami", "whoami [--json]", "Show the authenticated application user and Incus project."},
 	{"new", "new [--name=NAME] [--cpu=N] [--memory=SIZE] [--processes=N] [--disk=SIZE] [--json]", "Create an owned container. Omitted resources default to 1 CPU, 2GiB memory and 256 processes, each capped down by the operator maxima. Creation must also leave a 1GiB host memory reserve. Sizes use an integer and B, kB, KB, MB, GB, TB, KiB, MiB, GiB or TiB."},
 	{"ls", "ls [-l] [--json] [name-or-glob]", "List owned containers. -l adds known CPU, memory, process and disk limits."},
+	{"clear", "clear", "Clear the interactive terminal screen. Fails without an interactive terminal."},
 	{"rm", "rm [--json] NAME...", "Permanently remove owned containers and their data, without asking for confirmation. Report each failure and any successful removals."},
 	{"start", "start NAME [--json]", "Start an owned stopped container; its data is preserved. Alias: resume."},
 	{"stop", "stop NAME [--json]", "Gracefully stop an owned container; its data is preserved, running processes are not."},
@@ -72,18 +74,20 @@ func (h Handler) help(r request, s core.Streams) int {
 		text.WriteString(wrapHelp(paragraph, "", "", helpWidth))
 		text.WriteString("\n")
 	}
-	text.WriteString("\nCommands:\n")
+	text.WriteString("\n")
+	text.WriteString(terminal.Style(s, terminal.Bold, "Commands:"))
+	text.WriteString("\n")
 	for i, command := range selected {
 		if i != 0 {
 			text.WriteString("\n")
 		}
-		text.WriteString(wrapHelp(command.Usage, "  ", "      ", helpWidth))
+		text.WriteString(terminal.Style(s, terminal.Cyan, wrapHelp(command.Usage, "  ", "      ", helpWidth)))
 		text.WriteString("\n")
 		text.WriteString(wrapHelp(command.Description, "    ", "    ", helpWidth))
 		text.WriteString("\n")
 	}
 	text.WriteString("\n")
-	text.WriteString(wrapHelp(unsupportedDescription, "", "", helpWidth))
+	text.WriteString(terminal.Style(s, terminal.Yellow, wrapHelp(unsupportedDescription, "", "", helpWidth)))
 	text.WriteString("\n")
 	if err := writeOutput(s, text.String()); err != nil {
 		return failure(s, false, fmt.Errorf("write response: %w", err))

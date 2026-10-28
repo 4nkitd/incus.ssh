@@ -8,11 +8,11 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"golang.org/x/crypto/ssh"
 
 	"incus-for-devs/internal/core"
+	"incus-for-devs/internal/terminal"
 )
 
 const maxCommandLength = 16 * 1024
@@ -261,62 +261,134 @@ func (r *replReader) read(ctx context.Context, p []byte) (int, error) {
 	return r.sourceRead(ctx, p)
 }
 
-func (r *replReader) line(ctx context.Context, echo io.Writer) ([]byte, error) {
+func (r *replReader) line(ctx context.Context, edit *promptEditor) ([]byte, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-r.gate:
 	}
 	defer func() { r.gate <- struct{}{} }()
-	var line []byte
+	edit.reset()
 	for {
 		var data [1]byte
 		n, err := r.read(ctx, data[:])
-		if n == 0 && err != nil {
-			return line, err
-		}
 		if n == 0 {
-			continue
+			if err == nil {
+				continue
+			}
+			return edit.text(), err
 		}
 		b := data[0]
 		if b == '\n' || b == '\r' {
 			r.skipLF = b == '\r'
-			if echo != nil {
-				if _, err := io.WriteString(echo, "\r\n"); err != nil {
+			if edit.out != nil {
+				if _, err := io.WriteString(edit.out, "\r\n"); err != nil {
 					return nil, err
 				}
 			}
-			return line, nil
+			return edit.text(), nil
 		}
-		if echo != nil {
-			if b == 8 || b == 127 {
-				if len(line) > 0 {
-					_, width := utf8.DecodeLastRune(line)
-					line = line[:len(line)-width]
-					if _, err := io.WriteString(echo, "\b \b"); err != nil {
-						return nil, err
-					}
-				}
-				continue
-			}
-			if b == 4 && len(line) == 0 {
-				return nil, io.EOF
-			}
+		if edit.out == nil {
 			if b < 32 || b == 127 {
 				continue
 			}
+			if edit.length() == maxCommandLength {
+				return nil, bufio.ErrBufferFull
+			}
+			if err := edit.append(b); err != nil {
+				return nil, err
+			}
+			if err != nil {
+				return edit.text(), err
+			}
+			continue
 		}
-		if len(line) == maxCommandLength {
-			return nil, bufio.ErrBufferFull
-		}
-		line = append(line, b)
-		if echo != nil {
-			if _, err := echo.Write(data[:]); err != nil {
+		switch {
+		case b == 27:
+			arrow, err := r.escape(ctx)
+			if err != nil {
+				return edit.text(), err
+			}
+			if arrow != 0 {
+				if err := edit.historyMove(arrow == 'A'); err != nil {
+					return nil, err
+				}
+			}
+		case b == 12:
+			if err := edit.clear(); err != nil {
+				return nil, err
+			}
+		case b == 8 || b == 127:
+			if err := edit.backspace(); err != nil {
+				return nil, err
+			}
+		case b == 4:
+			if edit.length() == 0 {
+				return nil, io.EOF
+			}
+		case b < 32:
+			continue
+		default:
+			if edit.length() == maxCommandLength {
+				return nil, bufio.ErrBufferFull
+			}
+			if err := edit.append(b); err != nil {
 				return nil, err
 			}
 		}
 		if err != nil {
-			return line, err
+			return edit.text(), err
+		}
+	}
+}
+
+// escape consumes one escape sequence after ESC. Only up/down arrows are
+// reported; every other CSI sequence is consumed whole so its bytes never
+// reach the management command line.
+func (r *replReader) escape(ctx context.Context) (byte, error) {
+	var data [1]byte
+	for {
+		n, err := r.read(ctx, data[:])
+		if n == 0 {
+			if err == nil {
+				continue
+			}
+			return 0, err
+		}
+		switch data[0] {
+		case '[':
+			for {
+				n, err := r.read(ctx, data[:])
+				if n == 0 {
+					if err == nil {
+						continue
+					}
+					return 0, err
+				}
+				if data[0] < 0x20 || data[0] == 0x7f {
+					return 0, nil
+				}
+				if data[0] >= 0x40 && data[0] <= 0x7e {
+					if data[0] == 'A' || data[0] == 'B' {
+						return data[0], nil
+					}
+					return 0, nil
+				}
+			}
+		case 'O':
+			n, err := r.read(ctx, data[:])
+			if n == 0 {
+				if err == nil {
+					continue
+				}
+				return 0, err
+			}
+			if data[0] == 'A' || data[0] == 'B' {
+				return data[0], nil
+			}
+			return 0, nil
+		default:
+			return 0, nil
 		}
 	}
 }
@@ -329,28 +401,33 @@ func repl(ctx context.Context, principal core.Principal, handler core.Handler, s
 	// One session pump owns read-ahead; command cancellation never leaves a second reader behind.
 	input, ok := streams.In.(core.ContextReader)
 	if !ok {
-		io.WriteString(streams.Err, "session input is unavailable"+newline)
+		io.WriteString(streams.Err, terminal.Style(streams, terminal.Red, "session input is unavailable")+newline)
 		return 1
 	}
 	reader := newREPLReader(ctx, input)
 	streams.In = reader
-	if _, err := io.WriteString(streams.Out, "Incus development gateway. Type help for commands; exit to disconnect."+newline); err != nil {
+	banner := terminal.Style(streams, terminal.Bold, "Incus development gateway.") + " Type help for commands; exit to disconnect."
+	if _, err := io.WriteString(streams.Out, banner+newline); err != nil {
 		return 1
 	}
 	var echo io.Writer
 	if streams.PTY {
 		echo = streams.Out
-		if _, err := io.WriteString(streams.Out, "Line editing supports backspace only; arrow keys are unsupported."+newline); err != nil {
+		if _, err := io.WriteString(streams.Out, "Up/Down: command history; Ctrl-L: clear; backspace: edit."+newline); err != nil {
 			return 1
 		}
 	}
+	promptText := "incus> "
+	prompt := terminal.Style(streams, terminal.Cyan, promptText)
+	history := newCommandHistory()
+	editor := newPromptEditor(history, echo, prompt, streams.PTY && streams.Term != "" && streams.Term != "dumb")
 	for ctx.Err() == nil {
-		if _, err := io.WriteString(streams.Out, "incus> "); err != nil {
+		if _, err := io.WriteString(streams.Out, prompt); err != nil {
 			return 1
 		}
-		line, err := reader.line(ctx, echo)
+		line, err := reader.line(ctx, editor)
 		if errors.Is(err, bufio.ErrBufferFull) {
-			io.WriteString(streams.Err, "command too long"+newline)
+			io.WriteString(streams.Err, terminal.Style(streams, terminal.Red, "command too long")+newline)
 			return 1
 		}
 		if err != nil && !errors.Is(err, io.EOF) {
@@ -361,6 +438,7 @@ func repl(ctx context.Context, principal core.Principal, handler core.Handler, s
 			return 0
 		}
 		if command != "" {
+			history.add(command)
 			handler.Handle(ctx, principal, command, streams)
 		}
 		if errors.Is(err, io.EOF) {

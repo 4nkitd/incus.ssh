@@ -286,6 +286,7 @@ func TestInvalidInputNeverCallsBackend(t *testing.T) {
 		"rm", "rm good ../bad", "rm good --force", "rm good bad/thing --json", "rm good good", "rm '*'", "resume", "resume one two", "resume work --force",
 		"start", "start one two", "start work --force", "start work --timeout=5", "start work work", "start --all", "start work --project=dev-bob", "stop", "stop one two", "stop work --force", "stop --all", "stop work --timeout=0", "restart", "restart one two", "restart work --force", "restart work --timeout=0", "restart --profile=ifd",
 		"whoami extra", "whoami --keys", "help ls extra", "help unknown", "help --all", "? --unknown",
+		"clear now", "clear --json", "clear --json now", "clear --json=true", "clear -x", "clear --all",
 		"ssh", "ssh --json work", "ssh ../work id", "ssh 'unterminated", "ls 'unterminated", "new --name='unterminated", `ls \`,
 		"ls\x00 --json", "ls\nrm good", "ssh work echo\rtest", "ssh work echo\x1btest", "ls\u0085", "ls\xff", strings.Repeat(" ", maxLineBytes+1),
 		"rm " + strings.Repeat("a ", maxArguments+1),
@@ -587,12 +588,12 @@ func TestHelpListsExactlySupportedCommands(t *testing.T) {
 			t.Fatalf("help lists unsupported %s: %v", name, err)
 		}
 	}
-	for _, name := range []string{"help", "whoami", "new", "ls", "rm", "start", "stop", "restart", "resume", "ssh"} {
+	for _, name := range []string{"help", "whoami", "new", "ls", "clear", "rm", "start", "stop", "restart", "resume", "ssh"} {
 		if !listed[name] {
 			t.Fatalf("help omits %s: %v", name, listed)
 		}
 	}
-	if len(listed) != 10 {
+	if len(listed) != 11 {
 		t.Fatalf("help lists unexpected commands: %v", listed)
 	}
 	flat := flattened(object["description"].(string))

@@ -19,6 +19,10 @@ ssh -t -p 2222 you@GATEWAY ssh demo
 
 The bare connection opens a management prompt, never a host shell. `ssh demo` enters a container you own. Plain OpenSSH is enough; the compiled client is optional.
 
+Interactive management output uses color: a cyan prompt and help, green for running containers, amber for stopped, and red for plain-text diagnostics. JSON, piped output and guest program output are never color-wrapped. Color is off for `TERM=dumb` or an empty `TERM`, and when `NO_COLOR` is nonempty in the gateway server process; the client's local environment is not consulted.
+
+In the management prompt, Up/Down recall at most 100 commands for the current session only; history is never written to disk or logs, and guest keystrokes are not intercepted. The eleventh command, `clear`, and Ctrl-L clear the display; `clear` needs a PTY and a known, non-`dumb` `TERM`, takes no `--json` (failures still follow the usual JSON convention), and otherwise fails.
+
 ## What it is
 
 - One Go binary with server and client modes

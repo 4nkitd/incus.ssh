@@ -306,6 +306,7 @@ ssh -p 2222 you@GATEWAY start operator-check</pre>
           <tr><th scope="row"><code>whoami [--json]</code></th><td>Return the authenticated app user and project.</td></tr>
           <tr><th scope="row"><code>new [--name=NAME] [--cpu=N] [--memory=SIZE] [--processes=N] [--disk=SIZE] [--json]</code></th><td>Create and start an owned container with the configured image and profile. Omitted values use the defaults.</td></tr>
           <tr><th scope="row"><code>ls [-l] [--json] [name-or-glob]</code></th><td>List owned containers. <code>-l</code> has six fields: name, status, CPU, memory, processes and disk.</td></tr>
+          <tr><th scope="row"><code>clear</code></th><td>Clear the management terminal screen. Requires an interactive PTY and a non-dumb terminal; it does not remove containers or command history.</td></tr>
           <tr><th scope="row"><code>ssh NAME [COMMAND...]</code></th><td>Open a guest shell or run a guest command. Streams stdin, stdout, stderr and exit status.</td></tr>
           <tr><th scope="row"><code>start NAME [--json]</code></th><td>Start a stopped owned container. <code>resume</code> is an alias.</td></tr>
           <tr><th scope="row"><code>stop NAME [--json]</code></th><td>Gracefully stop an owned container. Files persist; process state does not.</td></tr>
@@ -342,6 +343,8 @@ ssh -p 2222 you@GATEWAY start operator-check</pre>
     </p>
 
     <h2 id="json">JSON output</h2>
+    <p>The management prompt supports Up/Down history, backspace and Ctrl-L to clear and redraw the current line. History is limited to 100 entries in the current SSH session and is never written to disk. Guest shells receive their own key streams unchanged.</p>
+    <p>Interactive prompts and help use cyan, running status uses green, stopped status uses amber and plain-text errors use red. JSON, non-PTY output and guest program output are not decorated. Colors are disabled for an empty or dumb terminal, or a nonempty <code>NO_COLOR</code> in the server process.</p>
     <div class="tablewrap" tabindex="0" role="region" aria-label="JSON output shapes">
       <table>
         <thead><tr><th scope="col">Call</th><th scope="col">Shape</th></tr></thead>

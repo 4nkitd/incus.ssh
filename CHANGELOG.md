@@ -13,6 +13,8 @@ Notable changes to incus.ssh.
 - Fruit-based container names: bare fruit names first, suffixed names such as `kiwi-2` only on collision. `--name=` still takes the name exactly as supplied.
 - `setup` subcommand for local Incus preparation: plan only by default, explicit root `--apply`, cached local image alias or fingerprint only, strict typed YAML templates, and bridge-only networks. It creates missing project and profile resources, verifies the result and never downloads images.
 - Host memory admission that keeps a 1GiB reserve, accounts for committed project memory and revalidates stored limits on start and restart.
+- Interactive terminal color: cyan prompt and help, green running containers, amber stopped, and red plain-text diagnostics. JSON, piped and guest program output stay plain; `TERM=dumb` or empty and nonempty `NO_COLOR` in the server process disable color.
+- Session-only prompt history (Up/Down, at most 100 entries, never persisted) and display clearing with `clear` or Ctrl-L; guest keystrokes pass through. `clear` requires a PTY with a known `TERM`, takes no `--json` (the usual JSON error convention remains), and is the eleventh management command.
 - CHANGELOG.md.
 
 #### Changed
