@@ -34,8 +34,13 @@ func TestConfigDefaultsAndSingleUser(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Listen != "127.0.0.1:2222" || cfg.MaxSessions != 8 || cfg.OperationTimeoutSeconds != 120 {
+	if cfg.Listen != "127.0.0.1:2222" || cfg.MaxSessions != 8 || cfg.OperationTimeoutSeconds != 120 || cfg.Limits.Processes != 256 {
 		t.Fatal("unexpected defaults")
+	}
+	configured := validConfig()
+	configured.Limits.Processes = 512
+	if err := configured.Validate(); err != nil || configured.Limits.Processes != 512 {
+		t.Fatalf("configured process maximum = %d, %v", configured.Limits.Processes, err)
 	}
 	cfg.Users = append(cfg.Users, User{Name: "other", Project: "ifd-other", AuthorizedKeys: []string{"key"}})
 	if cfg.Validate() == nil {
@@ -49,10 +54,14 @@ func TestConfigRejectsUnsafeValues(t *testing.T) {
 		func(c *Config) { c.IncusBinary = "incus" },
 		func(c *Config) { c.Users[0].Project = "default" },
 		func(c *Config) { c.Users[0].Name = "--project" },
+		func(c *Config) { c.Users[0].Name = "alice-" },
+		func(c *Config) { c.Users[0].Project = "ifd-dev-" },
+		func(c *Config) { c.Profile = "ifd-" },
 		func(c *Config) { c.Users[0].AuthorizedKeys = nil },
 		func(c *Config) { c.MaxSessions = 999 },
 		func(c *Config) { c.OperationTimeoutSeconds = -1 },
 		func(c *Config) { c.Limits.MaxInstances = 0 },
+		func(c *Config) { c.Limits.Processes = -1 },
 	}
 	for i, mutate := range tests {
 		cfg := validConfig()

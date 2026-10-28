@@ -44,6 +44,7 @@ func TestHelpUsesCRLFOnPTY(t *testing.T) {
 		t.Fatalf("status=%d stderr=%q", status, errOut.String())
 	}
 	assertCRLF(t, out.String())
+	assertHelpText(t, strings.ReplaceAll(out.String(), "\r\n", "\n"))
 	if !strings.Contains(out.String(), "help [all|COMMAND]") {
 		t.Fatalf("missing usage: %q", out.String())
 	}

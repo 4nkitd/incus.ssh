@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -40,6 +41,7 @@ func TestSSHManagementAndRemoteExecution(t *testing.T) {
 		key  ssh.Signer
 	}{
 		{"unknown username", "mallory", s.keys[alice.Name]},
+		{"root username", "root", s.keys[alice.Name]},
 		{"another user's key", alice.Name, s.keys[bob.Name]},
 		{"unknown key", alice.Name, generatedKey(t, "untrusted").signer},
 	} {
@@ -82,7 +84,7 @@ func TestSSHManagementAndRemoteExecution(t *testing.T) {
 	assertList(t, run(t, client, "ls --json", nil, 0), "demo")
 	assertList(t, run(t, other, "ls --json", nil, 0))
 
-	for _, line := range []string{"rm demo", "resume demo", "ssh demo printf stolen"} {
+	for _, line := range []string{"rm demo", "resume demo", "start demo", "stop demo", "restart demo", "ssh demo printf stolen"} {
 		response := run(t, other, line, nil, 1)
 		if response.out != "" || !strings.Contains(response.err, "not owned") {
 			t.Fatalf("foreign access %q: %+v", line, response)
@@ -168,6 +170,127 @@ func TestSSHShellManagementSequence(t *testing.T) {
 		t.Fatalf("missing shell error: %q", stderr.String())
 	}
 	assertList(t, run(t, client, "ls --json", nil, 0))
+}
+
+func TestSSHLifecycleStateAndOwnership(t *testing.T) {
+	s := startGateway(t)
+	aliceClient := s.connect(t, alice)
+	bobClient := s.connect(t, bob)
+	assertInstance(t, run(t, aliceClient, "new --name=demo --json", nil, 0).out, "demo")
+	assertStatus(t, aliceClient, "demo", "Running")
+
+	steps := []struct {
+		command string
+		status  string
+	}{
+		{"stop", "Stopped"},
+		{"start", "Running"},
+		{"stop", "Stopped"},
+		{"resume", "Running"},
+		{"restart", "Running"},
+	}
+	for _, step := range steps {
+		assertLifecycle(t, run(t, aliceClient, step.command+" demo --json", nil, 0), "demo")
+		assertStatus(t, aliceClient, "demo", step.status)
+	}
+	var methods []string
+	for _, call := range s.backend.lifecycleCalls() {
+		if call.principal != alice || call.name != "demo" {
+			t.Fatalf("lifecycle call recorded wrong identity: %+v", call)
+		}
+		methods = append(methods, call.method)
+	}
+	if want := []string{"stop", "start", "stop", "resume", "restart"}; !reflect.DeepEqual(methods, want) {
+		t.Fatalf("lifecycle calls = %v, want %v", methods, want)
+	}
+
+	recorded := len(s.backend.lifecycleCalls())
+	for _, command := range []string{"stop", "start", "restart", "resume"} {
+		response := run(t, bobClient, command+" demo", nil, 1)
+		if response.out != "" || !strings.Contains(response.err, "not owned") {
+			t.Fatalf("foreign %s: %+v", command, response)
+		}
+	}
+	if got := s.backend.lifecycleCalls(); len(got) != recorded {
+		t.Fatalf("foreign lifecycle reached the backend: %+v", got[recorded:])
+	}
+	assertStatus(t, aliceClient, "demo", "Running")
+
+	assertInstance(t, run(t, bobClient, "new --name=demo --json", nil, 0).out, "demo")
+	assertLifecycle(t, run(t, aliceClient, "stop demo --json", nil, 0), "demo")
+	assertStatus(t, aliceClient, "demo", "Stopped")
+	assertStatus(t, bobClient, "demo", "Running")
+	run(t, aliceClient, "rm demo --json", nil, 0)
+	run(t, bobClient, "rm demo --json", nil, 0)
+}
+
+func TestSSHProcessesWireMeaning(t *testing.T) {
+	s := startGateway(t)
+	client := s.connect(t, alice)
+
+	var help struct {
+		Commands []struct {
+			Usage string `json:"usage"`
+		} `json:"commands"`
+		Limits core.Limits `json:"limits"`
+	}
+	decode(t, run(t, client, "help --json", nil, 0).out, &help)
+	if help.Limits.Processes != 512 {
+		t.Fatalf("help limits processes = %d, want 512", help.Limits.Processes)
+	}
+	found := false
+	for _, command := range help.Commands {
+		found = found || strings.Contains(command.Usage, "--processes=N")
+	}
+	if !found {
+		t.Fatalf("help JSON omits the processes flag: %+v", help.Commands)
+	}
+	if text := run(t, client, "help new", nil, 0).out; !strings.Contains(text, "256 processes") {
+		t.Fatalf("new help omits the process default: %q", text)
+	}
+
+	created := run(t, client, "new --name=proc --processes=128 --json", nil, 0)
+	assertInstance(t, created.out, "proc")
+	if got := s.backend.lastCreate(); got.Processes != 128 || got.Name != "proc" {
+		t.Fatalf("create options = %+v", got)
+	}
+	if !strings.Contains(created.out, `"processes":"128"`) {
+		t.Fatalf("create response omits the requested process limit: %s", created.out)
+	}
+
+	var listed struct {
+		VMs []struct {
+			Name      string `json:"vm_name"`
+			Processes string `json:"processes"`
+		} `json:"vms"`
+	}
+	decode(t, run(t, client, "ls --json", nil, 0).out, &listed)
+	if len(listed.VMs) != 1 || listed.VMs[0].Name != "proc" || listed.VMs[0].Processes != "128" {
+		t.Fatalf("list process limit = %+v", listed.VMs)
+	}
+}
+
+func TestSSHPTYHelpCRLFAndGuestBytes(t *testing.T) {
+	s := startGateway(t)
+	client := s.connect(t, alice)
+	run(t, client, "new --name=demo --json", nil, 0)
+
+	assertPTYLineEndings(t, runPTY(t, client, "help", nil, 0).out)
+	plain := run(t, client, "help", nil, 0)
+	if strings.Contains(plain.out, "\r") || !strings.Contains(plain.out, "\n") {
+		t.Fatalf("non-PTY help changed line endings: %q", plain.out)
+	}
+
+	input := bytes.Repeat([]byte{0, 1, 10, 13, 127, 128, 254, 255}, 8193)
+	response := runPTY(t, client, "ssh demo "+binaryCommand, input, 37)
+	wantOut := append([]byte{'o', 'u', 't', 0, 255}, input...)
+	if !bytes.Equal([]byte(response.out), wantOut) || response.err != "err\x00\xfe" {
+		t.Fatalf("PTY guest streams changed: stdout bytes=%d want=%d, stderr=%q", len(response.out), len(wantOut), response.err)
+	}
+	call := s.backend.lastExec()
+	if call.principal != alice || call.name != "demo" || call.command != binaryCommand || !call.pty || !bytes.Equal(call.input, input) {
+		t.Fatalf("PTY request changed: principal=%+v name=%q command=%q pty=%v input bytes=%d", call.principal, call.name, call.command, call.pty, len(call.input))
+	}
 }
 
 func TestSSHExecutionCancellation(t *testing.T) {
@@ -256,7 +379,7 @@ func startGateway(t *testing.T) *testGateway {
 	s := &testGateway{address: listener.Addr().String(), host: host.signer.PublicKey(), keys: make(map[string]ssh.Signer), backend: backend, cancel: cancel, done: make(chan struct{})}
 	cfg := gateway.Config{
 		HostKeyPath: host.path,
-		Handler:     &command.Handler{Backend: backend, Limits: core.Limits{MaxInstances: 4, CPU: 2, Memory: "1GiB", Disk: "5GiB"}},
+		Handler:     &command.Handler{Backend: backend, Limits: core.Limits{MaxInstances: 4, CPU: 2, Memory: "1GiB", Processes: 512, Disk: "5GiB"}},
 		MaxSessions: 8,
 	}
 	for _, p := range []core.Principal{alice, bob} {
@@ -315,6 +438,16 @@ type response struct{ out, err string }
 
 func run(t *testing.T, client *ssh.Client, line string, input []byte, wantStatus int) response {
 	t.Helper()
+	return runSession(t, client, line, input, wantStatus, false)
+}
+
+func runPTY(t *testing.T, client *ssh.Client, line string, input []byte, wantStatus int) response {
+	t.Helper()
+	return runSession(t, client, line, input, wantStatus, true)
+}
+
+func runSession(t *testing.T, client *ssh.Client, line string, input []byte, wantStatus int, pty bool) response {
+	t.Helper()
 	session, err := client.NewSession()
 	if err != nil {
 		t.Fatal(err)
@@ -322,6 +455,11 @@ func run(t *testing.T, client *ssh.Client, line string, input []byte, wantStatus
 	defer session.Close()
 	var stdout, stderr bytes.Buffer
 	session.Stdin, session.Stdout, session.Stderr = bytes.NewReader(input), &stdout, &stderr
+	if pty {
+		if err := session.RequestPty("xterm-256color", 24, 80, ssh.TerminalModes{ssh.ECHO: 0}); err != nil {
+			t.Fatalf("%q request PTY: %v", line, err)
+		}
+	}
 	err = session.Run(line)
 	status := 0
 	if err != nil {
@@ -369,6 +507,53 @@ func assertList(t *testing.T, response response, names ...string) {
 	}
 }
 
+func assertStatus(t *testing.T, client *ssh.Client, name, want string) {
+	t.Helper()
+	var object struct {
+		VMs []struct {
+			Name   string `json:"vm_name"`
+			Status string `json:"status"`
+		} `json:"vms"`
+	}
+	decode(t, run(t, client, "ls --json", nil, 0).out, &object)
+	for _, vm := range object.VMs {
+		if vm.Name == name {
+			if vm.Status != want {
+				t.Fatalf("%s status = %q, want %q", name, vm.Status, want)
+			}
+			return
+		}
+	}
+	t.Fatalf("instance %q missing from list", name)
+}
+
+func assertLifecycle(t *testing.T, response response, name string) {
+	t.Helper()
+	var object map[string]string
+	decode(t, response.out, &object)
+	if response.err != "" || !reflect.DeepEqual(object, map[string]string{"vm_name": name}) {
+		t.Fatalf("lifecycle response = %+v", response)
+	}
+}
+
+func assertPTYLineEndings(t *testing.T, text string) {
+	t.Helper()
+	if text == "" || !strings.HasSuffix(text, "\r\n") {
+		t.Fatalf("PTY output lacks a final CRLF: %q", text)
+	}
+	if strings.Contains(text, "\r\r") {
+		t.Fatalf("PTY output doubled a carriage return: %q", text)
+	}
+	for i := 0; i < len(text); i++ {
+		if text[i] == '\n' && (i == 0 || text[i-1] != '\r') {
+			t.Fatalf("bare newline at offset %d: %q", i, text)
+		}
+		if text[i] == '\r' && (i+1 == len(text) || text[i+1] != '\n') {
+			t.Fatalf("bare carriage return at offset %d: %q", i, text)
+		}
+	}
+}
+
 func await(t *testing.T, done <-chan struct{}, description string) {
 	t.Helper()
 	select {
@@ -386,11 +571,19 @@ type execCall struct {
 	pty       bool
 }
 
+type lifecycleCall struct {
+	method    string
+	principal core.Principal
+	name      string
+}
+
 type memoryBackend struct {
 	mu        sync.Mutex
 	instances map[core.Principal]map[string]core.Instance
 	calls     int
 	exec      execCall
+	create    core.CreateOptions
+	lifecycle []lifecycleCall
 	started   chan struct{}
 	cancelled chan struct{}
 }
@@ -413,6 +606,7 @@ func (b *memoryBackend) Create(_ context.Context, p core.Principal, options core
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.calls++
+	b.create = options
 	if b.instances[p] == nil {
 		b.instances[p] = make(map[string]core.Instance)
 	}
@@ -420,6 +614,9 @@ func (b *memoryBackend) Create(_ context.Context, p core.Principal, options core
 		return core.Instance{}, errors.New("already exists")
 	}
 	item := core.Instance{Name: options.Name, Status: "Running", CPU: "2", Memory: "1GiB", Disk: "5GiB"}
+	if options.Processes > 0 {
+		item.Processes = strconv.Itoa(options.Processes)
+	}
 	b.instances[p][item.Name] = item
 	return item, nil
 }
@@ -436,12 +633,33 @@ func (b *memoryBackend) Remove(_ context.Context, p core.Principal, name string)
 }
 
 func (b *memoryBackend) Resume(_ context.Context, p core.Principal, name string) error {
+	return b.transition(p, name, "resume", "Running")
+}
+
+func (b *memoryBackend) Start(_ context.Context, p core.Principal, name string) error {
+	return b.transition(p, name, "start", "Running")
+}
+
+func (b *memoryBackend) Stop(_ context.Context, p core.Principal, name string) error {
+	return b.transition(p, name, "stop", "Stopped")
+}
+
+func (b *memoryBackend) Restart(_ context.Context, p core.Principal, name string) error {
+	return b.transition(p, name, "restart", "Running")
+}
+
+func (b *memoryBackend) transition(p core.Principal, name, method, status string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.calls++
-	if _, exists := b.instances[p][name]; !exists {
+	items := b.instances[p]
+	item, exists := items[name]
+	if !exists {
 		return errors.New("instance not owned by principal")
 	}
+	item.Status = status
+	items[name] = item
+	b.lifecycle = append(b.lifecycle, lifecycleCall{method, p, name})
 	return nil
 }
 
@@ -491,4 +709,16 @@ func (b *memoryBackend) lastExec() execCall {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.exec
+}
+
+func (b *memoryBackend) lastCreate() core.CreateOptions {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.create
+}
+
+func (b *memoryBackend) lifecycleCalls() []lifecycleCall {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]lifecycleCall(nil), b.lifecycle...)
 }

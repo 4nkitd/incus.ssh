@@ -3,12 +3,13 @@ config:
   features.profiles: "true"
   features.networks: "false"
   features.storage.volumes: "true"
+  features.storage.buckets: "false"
   limits.containers: "1"
   limits.instances: "1"
   limits.virtual-machines: "0"
-  limits.cpu: "1"
-  limits.memory: 2GiB
-  limits.processes: "256"
+  limits.cpu: "2"
+  limits.memory: 4GiB
+  limits.processes: "512"
   restricted: "true"
   restricted.containers.privilege: isolated
   restricted.containers.nesting: block

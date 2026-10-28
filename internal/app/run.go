@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -25,7 +26,10 @@ import (
 	"incus-for-devs/internal/core"
 	"incus-for-devs/internal/gateway"
 	"incus-for-devs/internal/incus"
+	"incus-for-devs/internal/setup"
 )
+
+var Version = "development"
 
 func Run(args []string) error {
 	if len(args) > 0 {
@@ -34,8 +38,10 @@ func Run(args []string) error {
 			return serve(args[1:])
 		case "keygen":
 			return keygen(args[1:])
+		case "setup":
+			return setup.Run(args[1:])
 		case "version", "--version":
-			fmt.Println("incus-for-devs development")
+			fmt.Printf("incus.ssh %s (incus-for-devs CLI)\n", Version)
 			return nil
 		case "--help", "-h":
 			fmt.Print(localHelp)
@@ -46,6 +52,9 @@ func Run(args []string) error {
 	}
 	sshArgs, err := clientArgs(args, os.Getenv("INCUS_FOR_DEVS_TARGET"))
 	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	path, err := exec.LookPath("ssh")
@@ -59,6 +68,9 @@ func serve(args []string) error {
 	flags := flag.NewFlagSet("server", flag.ContinueOnError)
 	path := flags.String("config", "", "path to operator-owned JSON configuration")
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if *path == "" || flags.NArg() != 0 {
@@ -68,9 +80,13 @@ func serve(args []string) error {
 	if err != nil {
 		return err
 	}
+	limits := cfg.Limits
+	if cores := runtime.NumCPU(); cores > 0 && cores < limits.CPU {
+		limits.CPU = cores
+	}
 	backend, err := incus.New(incus.Config{
 		Binary: cfg.IncusBinary, Image: cfg.Image, Profile: cfg.Profile,
-		Limits: cfg.Limits, OperationTimeout: time.Duration(cfg.OperationTimeoutSeconds) * time.Second,
+		Limits: limits, OperationTimeout: time.Duration(cfg.OperationTimeoutSeconds) * time.Second,
 	})
 	if err != nil {
 		return err
@@ -91,7 +107,7 @@ func serve(args []string) error {
 	fmt.Fprintln(os.Stderr, "private SSH gateway listening on", listener.Addr())
 	return gateway.Serve(ctx, listener, gateway.Config{
 		HostKeyPath: cfg.HostKey, Users: users, MaxSessions: cfg.MaxSessions,
-		Handler: &command.Handler{Backend: backend, Limits: cfg.Limits},
+		Handler: &command.Handler{Backend: backend, Limits: limits},
 	})
 }
 
@@ -99,6 +115,9 @@ func keygen(args []string) error {
 	flags := flag.NewFlagSet("keygen", flag.ContinueOnError)
 	path := flags.String("path", "", "new persistent server host-key file")
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 	if !filepath.IsAbs(*path) || flags.NArg() != 0 {
@@ -175,6 +194,9 @@ func clientArgs(args []string, envTarget string) ([]string, error) {
 		if len(commandArgs) == 3 && commandArgs[0] == "ssh" {
 			// The third argument is a complete guest shell command, not one executable name.
 			quoted[2] = commandArgs[2]
+			if quoted[2] == "" {
+				quoted[2] = ":"
+			}
 		}
 		result = append(result, strings.Join(quoted, " "))
 	}
@@ -185,10 +207,12 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
-const localHelp = `Incus for devs: a private SSH gateway for trusted Linux containers.
+const localHelp = `incus.ssh: a private SSH gateway for trusted Linux containers.
 
   incus-for-devs server --config /etc/incus-for-devs/config.json
-  incus-for-devs keygen --path /etc/incus-for-devs/host.key
+  incus-for-devs keygen --path /var/lib/incus-for-devs/host.key
+  incus-for-devs setup --help
+  incus-for-devs version
   incus-for-devs [client] --target user@host --port 2222 help
   incus-for-devs --target your-ssh-alias ls --json
 

@@ -32,7 +32,7 @@ type Config struct {
 	Users                   []User      `json:"users"`
 }
 
-var slug = regexp.MustCompile(`^[a-z][a-z0-9-]{0,47}$`)
+var slug = regexp.MustCompile(`^[a-z](?:[a-z0-9-]{0,46}[a-z0-9])?$`)
 
 func LoadConfig(path string) (Config, error) {
 	var cfg Config
@@ -89,6 +89,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Limits.MaxInstances < 1 || c.Limits.CPU < 1 || c.Limits.Memory == "" {
 		return errors.New("positive instance/CPU limits and a memory limit are required")
+	}
+	if c.Limits.Processes < 0 {
+		return errors.New("process limit must not be negative")
+	}
+	if c.Limits.Processes == 0 {
+		c.Limits.Processes = 256
 	}
 	// Admission is per-project until a global resource allocator is implemented.
 	if len(c.Users) != 1 {

@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-The project is at V1. Security fixes target the current `main` branch.
+Version 0.2.0 is the current Phase 1 release. Security fixes target the current `main` branch.
 
 ## Reporting a vulnerability
 
@@ -26,7 +26,11 @@ This project is a single-user SSH gateway for trusted development containers. Th
 - Containers share the host kernel; this is not VM isolation
 - A configured app user is trusted and can run commands inside their own containers
 - The service account has effective host-root authority through the Incus socket by design
+- Creating or starting a stopped instance checks host availability with a 1GiB reserve; an active restart does not charge its resident memory again. Admission is not a reservation or swap guarantee
+- Start and restart revalidate the instance's stored CPU, memory and process limits against current operator maxima
+- CPU maxima are per-container caps; the gateway does not schedule or fairly share CPU time
 - Directory storage may not enforce disk quotas
 - Reboot recovery is not verified
+- `pause`, SFTP/SCP, previews, Docker/nested containers, OpenTunnel-style exposure and multiuser access are unsupported in Phase 1
 
-Reports that abuse the trust boundary, escape project restrictions, cross app-user ownership, inject host-shell commands, bypass authentication or leak secrets are in scope.
+Reports that abuse the trust boundary, escape project restrictions, cross app-user ownership, inject host-shell commands, bypass authentication or leak secrets are in scope. Reports about unsupported features are not vulnerabilities unless they bypass a documented failure and widen access.

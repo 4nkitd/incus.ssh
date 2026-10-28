@@ -34,18 +34,20 @@ type Streams struct {
 }
 
 type CreateOptions struct {
-	Name   string
-	CPU    int
-	Memory string
-	Disk   string
+	Name      string
+	CPU       int
+	Memory    string
+	Processes int
+	Disk      string
 }
 
 type Instance struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	CPU    string `json:"cpu,omitempty"`
-	Memory string `json:"memory,omitempty"`
-	Disk   string `json:"disk,omitempty"`
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	CPU       string `json:"cpu,omitempty"`
+	Memory    string `json:"memory,omitempty"`
+	Processes string `json:"processes,omitempty"`
+	Disk      string `json:"disk,omitempty"`
 }
 
 type Backend interface {
@@ -53,6 +55,9 @@ type Backend interface {
 	Create(context.Context, Principal, CreateOptions) (Instance, error)
 	Remove(context.Context, Principal, string) error
 	Resume(context.Context, Principal, string) error
+	Stop(context.Context, Principal, string) error
+	Start(context.Context, Principal, string) error
+	Restart(context.Context, Principal, string) error
 	Exec(context.Context, Principal, string, string, Streams) (int, error)
 }
 
@@ -64,5 +69,6 @@ type Limits struct {
 	MaxInstances int    `json:"max_instances"`
 	CPU          int    `json:"cpu"`
 	Memory       string `json:"memory"`
+	Processes    int    `json:"processes,omitempty"`
 	Disk         string `json:"disk,omitempty"`
 }

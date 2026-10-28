@@ -21,6 +21,10 @@ import (
 const maxLineBytes = 16 * 1024
 const maxArguments = 256
 
+// An explicitly empty remote command runs the shell no-op so it stays distinct
+// from an absent command, which opens an interactive login shell and reads stdin.
+const noopRemoteCommand = ":"
+
 type Handler struct {
 	Backend core.Backend
 	Limits  core.Limits
@@ -42,15 +46,16 @@ type request struct {
 }
 
 type instanceSummary struct {
-	Name   string `json:"vm_name"`
-	Status string `json:"status"`
-	CPU    string `json:"cpu,omitempty"`
-	Memory string `json:"memory,omitempty"`
-	Disk   string `json:"disk,omitempty"`
+	Name      string `json:"vm_name"`
+	Status    string `json:"status"`
+	CPU       string `json:"cpu,omitempty"`
+	Memory    string `json:"memory,omitempty"`
+	Processes string `json:"processes,omitempty"`
+	Disk      string `json:"disk,omitempty"`
 }
 
 func summary(vm core.Instance) instanceSummary {
-	return instanceSummary{vm.Name, vm.Status, vm.CPU, vm.Memory, vm.Disk}
+	return instanceSummary{Name: vm.Name, Status: vm.Status, CPU: vm.CPU, Memory: vm.Memory, Processes: vm.Processes, Disk: vm.Disk}
 }
 
 func (h Handler) Handle(ctx context.Context, p core.Principal, line string, s core.Streams) int {
@@ -110,7 +115,7 @@ func (h Handler) Handle(ctx context.Context, p core.Principal, line string, s co
 		for _, vm := range items {
 			var status int
 			if r.long {
-				status = writeText(s, "%s\t%s\t%s\t%s\t%s\n", vm.Name, vm.Status, vm.CPU, vm.Memory, vm.Disk)
+				status = writeText(s, "%s\t%s\t%s\t%s\t%s\t%s\n", vm.Name, vm.Status, vm.CPU, vm.Memory, vm.Processes, vm.Disk)
 			} else {
 				status = writeText(s, "%s\t%s\n", vm.Name, vm.Status)
 			}
@@ -122,15 +127,13 @@ func (h Handler) Handle(ctx context.Context, p core.Principal, line string, s co
 	case "rm":
 		return h.remove(ctx, p, r, s)
 	case "resume":
-		if err := h.Backend.Resume(ctx, p, r.args[0]); err != nil {
-			return failure(s, r.json, err)
-		}
-		if r.json {
-			return writeJSON(s, struct {
-				Name string `json:"vm_name"`
-			}{r.args[0]})
-		}
-		return writeText(s, "resumed %s\n", r.args[0])
+		return h.lifecycle(ctx, p, r, s, "resumed", h.Backend.Resume)
+	case "start":
+		return h.lifecycle(ctx, p, r, s, "started", h.Backend.Start)
+	case "stop":
+		return h.lifecycle(ctx, p, r, s, "stopped", h.Backend.Stop)
+	case "restart":
+		return h.lifecycle(ctx, p, r, s, "restarted", h.Backend.Restart)
 	case "ssh":
 		status, err := h.Backend.Exec(ctx, p, r.args[0], r.remote, execStreams)
 		if err != nil {
@@ -174,6 +177,19 @@ func (h Handler) remove(ctx context.Context, p core.Principal, r request, s core
 		}
 	}
 	return status
+}
+
+func (h Handler) lifecycle(ctx context.Context, p core.Principal, r request, s core.Streams, action string, apply func(context.Context, core.Principal, string) error) int {
+	name := r.args[0]
+	if err := apply(ctx, p, name); err != nil {
+		return failure(s, r.json, err)
+	}
+	if r.json {
+		return writeJSON(s, struct {
+			Name string `json:"vm_name"`
+		}{name})
+	}
+	return writeText(s, "%s %s\n", action, name)
 }
 
 func parse(line string) (request, error) {
@@ -241,12 +257,16 @@ func parse(line string) (request, error) {
 					return r, invalidName(value)
 				}
 				r.create.Name = value
-			case "--cpu":
-				cpu, err := positiveInteger(value)
+			case "--cpu", "--processes":
+				n, err := positiveInteger(value)
 				if err != nil {
-					return r, fmt.Errorf("--cpu requires a positive integer: %w", err)
+					return r, fmt.Errorf("%s requires a positive integer: %w", flag, err)
 				}
-				r.create.CPU = cpu
+				if flag == "--cpu" {
+					r.create.CPU = n
+				} else {
+					r.create.Processes = n
+				}
 			case "--memory", "--disk":
 				if err := validSize(value); err != nil {
 					return r, fmt.Errorf("%s: %w", flag, err)
@@ -290,12 +310,12 @@ func parse(line string) (request, error) {
 				return r, fmt.Errorf("invalid glob: %w", err)
 			}
 		}
-	case "rm", "resume":
+	case "rm", "resume", "start", "stop", "restart":
 		if word == "rm" && len(r.args) == 0 {
 			return r, errors.New("rm requires one or more names")
 		}
-		if word == "resume" && len(r.args) != 1 {
-			return r, errors.New("resume requires exactly one name")
+		if word != "rm" && len(r.args) != 1 {
+			return r, fmt.Errorf("%s requires exactly one name", word)
 		}
 		names := make(map[string]bool)
 		for _, name := range r.args {
@@ -319,6 +339,14 @@ func requestedJSON(line string) bool {
 	}
 	command, rest, err := firstWord(line)
 	if err != nil || command == "ssh" {
+		return false
+	}
+	if tokens, err := shlex.Split(rest); err == nil {
+		for _, token := range tokens {
+			if token == "--json" {
+				return true
+			}
+		}
 		return false
 	}
 	for rest != "" {
@@ -363,11 +391,11 @@ func validSize(value string) error {
 
 func unsupported(command string) error {
 	switch command {
-	case "help", "?", "whoami", "new", "ls", "rm", "resume", "ssh":
+	case "help", "?", "whoami", "new", "ls", "rm", "resume", "start", "stop", "restart", "ssh":
 		return nil
 	case "pause":
 		return errors.New("pause is unsupported: Incus containers cannot promise exe.dev RAM-to-disk suspend; stop and freeze are not substitutes")
-	case "stop", "restart", "share", "ssh-key", "sftp", "scp", "portforward", "port-forward", "forward", "direct-host":
+	case "share", "ssh-key", "sftp", "scp", "portforward", "port-forward", "forward", "direct-host":
 		return fmt.Errorf("%s is unsupported by incus-for-devs", command)
 	default:
 		return fmt.Errorf("unknown command %q; use help", command)
@@ -417,7 +445,9 @@ func firstWord(line string) (string, string, error) {
 }
 
 // A single fully quoted argument is a command envelope. Otherwise the tail is
-// passed byte-for-byte to the container shell, never to a host shell.
+// passed byte-for-byte to the container shell, never to a host shell. An
+// explicitly empty envelope becomes the shell no-op; an absent tail stays empty
+// so the backend opens an interactive shell only when no command was supplied.
 func remoteCommand(raw string) string {
 	trimmed := strings.TrimRight(raw, " \t")
 	if len(trimmed) < 2 || (trimmed[0] != '\'' && trimmed[0] != '"') {
@@ -429,6 +459,9 @@ func remoteCommand(raw string) string {
 		ch := trimmed[i]
 		if ch == quote {
 			if i == len(trimmed)-1 {
+				if command.Len() == 0 {
+					return noopRemoteCommand
+				}
 				return command.String()
 			}
 			return raw

@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	"github.com/creack/pty"
 
 	"incus-for-devs/internal/core"
+	"incus-for-devs/internal/names"
 )
 
 var alice = core.Principal{Name: "alice", Project: "developers"}
@@ -60,7 +62,7 @@ func newFixture(t *testing.T, items []instance, behavior scenario) *fixture {
 	}
 	writeJSON(t, filepath.Join(dir, "instances.json"), items)
 	writeJSON(t, filepath.Join(dir, "scenario.json"), behavior)
-	config := Config{Binary: binary, Image: "images:debian/12", Profile: "development", Limits: core.Limits{MaxInstances: 3, CPU: 2, Memory: "2GiB"}, OperationTimeout: 5 * time.Second}
+	config := Config{Binary: binary, Image: "images:debian/12", Profile: "development", Limits: core.Limits{MaxInstances: 3, CPU: 2, Memory: "2GiB", Processes: 512}, OperationTimeout: 5 * time.Second, AvailableMemory: func() (uint64, error) { return 16 << 30, nil }}
 	backend, err := New(config)
 	if err != nil {
 		t.Fatal(err)
@@ -100,7 +102,7 @@ func (f *fixture) calls(t *testing.T) [][]string {
 }
 
 func ownedInstance(name, owner string) instance {
-	return instance{Name: name, Project: alice.Project, Type: "container", Status: "Running", Config: map[string]string{ownerKey: owner, "limits.cpu": "2", "limits.memory": "2GiB"}}
+	return instance{Name: name, Project: alice.Project, Type: "container", Status: "Running", Config: map[string]string{ownerKey: owner, "limits.cpu": "1", "limits.memory": "2GiB", "limits.processes": "256"}}
 }
 
 func TestIncusHelper(t *testing.T) {
@@ -195,7 +197,7 @@ func TestIncusHelper(t *testing.T) {
 		items = append(items, item)
 		data, _ = json.Marshal(items)
 		_ = os.WriteFile(filepath.Join(dir, "instances.json"), data, 0600)
-	case "delete", "start":
+	case "delete", "start", "stop", "restart":
 	case "exec":
 		if behavior.WaitForExecRelease {
 			for {
@@ -231,6 +233,7 @@ func TestNewRejectsInvalidConfigurationWithoutRunningCLI(t *testing.T) {
 		{"profile remote", func(c *Config) { c.Profile = "remote:profile" }},
 		{"zero CPU", func(c *Config) { c.Limits.CPU = 0 }},
 		{"negative maximum", func(c *Config) { c.Limits.MaxInstances = -1 }},
+		{"negative processes", func(c *Config) { c.Limits.Processes = -1 }},
 		{"memory overflow", func(c *Config) { c.Limits.Memory = "18446744073709551615GiB" }},
 		{"memory zero", func(c *Config) { c.Limits.Memory = "0GiB" }},
 		{"disk negative", func(c *Config) { c.Limits.Disk = "-1GiB" }},
@@ -248,8 +251,13 @@ func TestNewRejectsInvalidConfigurationWithoutRunningCLI(t *testing.T) {
 	config := f.config
 	config.Binary = "/does/not/exist/incus"
 	config.OperationTimeout = 0
-	if _, err := New(config); err != nil {
+	config.Limits.Processes = 0
+	backend, err := New(config)
+	if err != nil {
 		t.Fatalf("constructor attempted execution or rejected timeout default: %v", err)
+	}
+	if backend.config.Limits.Processes != defaultProcesses {
+		t.Fatalf("process maximum default = %d", backend.config.Limits.Processes)
 	}
 	if calls := f.calls(t); len(calls) != 0 {
 		t.Fatalf("constructor ran CLI: %v", calls)
@@ -267,6 +275,15 @@ func TestInvalidNamesAndPrincipalsNeverReachCLI(t *testing.T) {
 		}
 		if err := f.backend.Resume(context.Background(), alice, name); err == nil {
 			t.Errorf("Resume accepted %q", name)
+		}
+		if err := f.backend.Start(context.Background(), alice, name); err == nil {
+			t.Errorf("Start accepted %q", name)
+		}
+		if err := f.backend.Stop(context.Background(), alice, name); err == nil {
+			t.Errorf("Stop accepted %q", name)
+		}
+		if err := f.backend.Restart(context.Background(), alice, name); err == nil {
+			t.Errorf("Restart accepted %q", name)
 		}
 		if _, err := f.backend.Exec(context.Background(), alice, name, "true", core.Streams{}); err == nil {
 			t.Errorf("Exec accepted %q", name)
@@ -289,7 +306,7 @@ func TestOwnershipAndProjectScoping(t *testing.T) {
 	mine := ownedInstance("mine", "alice")
 	foreign := ownedInstance("foreign", "bob")
 	unlabelled := ownedInstance("unlabelled", "")
-	unlabelled.ExpandedConfig = map[string]string{ownerKey: "alice"}
+	unlabelled.ExpandedConfig = map[string]string{ownerKey: "alice", "limits.memory": "2GiB"}
 	wrongProject := ownedInstance("wrong-project", "alice")
 	wrongProject.Project = "other"
 	vm := ownedInstance("machine", "alice")
@@ -306,6 +323,15 @@ func TestOwnershipAndProjectScoping(t *testing.T) {
 		if err := f.backend.Resume(context.Background(), alice, name); err == nil {
 			t.Errorf("Resume allowed %s", name)
 		}
+		if err := f.backend.Start(context.Background(), alice, name); err == nil {
+			t.Errorf("Start allowed %s", name)
+		}
+		if err := f.backend.Stop(context.Background(), alice, name); err == nil {
+			t.Errorf("Stop allowed %s", name)
+		}
+		if err := f.backend.Restart(context.Background(), alice, name); err == nil {
+			t.Errorf("Restart allowed %s", name)
+		}
 		if _, err := f.backend.Exec(context.Background(), alice, name, "true", core.Streams{}); err == nil {
 			t.Errorf("Exec allowed %s", name)
 		}
@@ -318,12 +344,60 @@ func TestOwnershipAndProjectScoping(t *testing.T) {
 	if err := f.backend.Resume(context.Background(), alice, "mine"); err != nil {
 		t.Fatal(err)
 	}
+	if err := f.backend.Start(context.Background(), alice, "mine"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.backend.Stop(context.Background(), alice, "mine"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.backend.Restart(context.Background(), alice, "mine"); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.backend.Remove(context.Background(), alice, "mine"); err != nil {
 		t.Fatal(err)
 	}
 	calls := f.calls(t)
-	if got := calls[len(calls)-1][4:]; !reflect.DeepEqual(got, []string{"delete", "mine", "--force"}) {
-		t.Fatalf("delete args = %q", got)
+	want := [][]string{
+		{"start", "mine"},
+		{"start", "mine"},
+		{"stop", "mine", "--force=false", "--timeout=5"},
+		{"restart", "mine", "--force=false", "--timeout=5"},
+		{"delete", "mine", "--force"},
+	}
+	offset := len(calls) - 2*len(want)
+	for i, wantArgs := range want {
+		if got := calls[offset+2*i][4:]; !reflect.DeepEqual(got, []string{"list", "--format=json"}) {
+			t.Fatalf("ownership check before %q = %q", wantArgs[0], got)
+		}
+		if got := calls[offset+2*i+1][4:]; !reflect.DeepEqual(got, wantArgs) {
+			t.Fatalf("lifecycle args = %q, want %q", got, wantArgs)
+		}
+	}
+}
+
+func TestLifecycleArguments(t *testing.T) {
+	f := newFixture(t, []instance{ownedInstance("mine", alice.Name)}, scenario{})
+	actions := []struct {
+		name string
+		call func() error
+		want []string
+	}{
+		{"start", func() error { return f.backend.Start(context.Background(), alice, "mine") }, []string{"start", "mine"}},
+		{"stop", func() error { return f.backend.Stop(context.Background(), alice, "mine") }, []string{"stop", "mine", "--force=false", "--timeout=5"}},
+		{"restart", func() error { return f.backend.Restart(context.Background(), alice, "mine") }, []string{"restart", "mine", "--force=false", "--timeout=5"}},
+	}
+	for _, action := range actions {
+		if err := action.call(); err != nil {
+			t.Fatalf("%s: %v", action.name, err)
+		}
+		calls := f.calls(t)
+		last := calls[len(calls)-1]
+		if !reflect.DeepEqual(last[:4], []string{"--force-local", "--project", alice.Project, "--quiet"}) {
+			t.Fatalf("%s lost invocation prefix: %q", action.name, last)
+		}
+		if got := last[4:]; !reflect.DeepEqual(got, action.want) {
+			t.Fatalf("%s args = %q, want %q", action.name, got, action.want)
+		}
 	}
 }
 
@@ -335,7 +409,7 @@ func TestResourceCeilingsAndLaunchArguments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, options := range []core.CreateOptions{{CPU: -1}, {CPU: 3}, {Memory: "3GiB"}, {Memory: "2147483649B"}, {Memory: "-1MB"}, {Memory: "0MiB"}, {Memory: "18446744073709551615GiB"}, {Memory: "2GiB --config=x"}, {Disk: "11GiB"}, {Disk: "0GB"}} {
+	for _, options := range []core.CreateOptions{{CPU: -1}, {CPU: 3}, {Processes: -1}, {Processes: 513}, {Memory: "3GiB"}, {Memory: "2147483649B"}, {Memory: "-1MB"}, {Memory: "0MiB"}, {Memory: "18446744073709551615GiB"}, {Memory: "2GiB --config=x"}, {Disk: "11GiB"}, {Disk: "0GB"}} {
 		if _, err := backend.Create(context.Background(), alice, options); err == nil {
 			t.Errorf("accepted resources %#v", options)
 		}
@@ -343,22 +417,441 @@ func TestResourceCeilingsAndLaunchArguments(t *testing.T) {
 	if len(f.calls(t)) != 0 {
 		t.Fatal("invalid resources reached CLI")
 	}
-	item, err := backend.Create(context.Background(), alice, core.CreateOptions{Name: "small", CPU: 1, Memory: "2000MB", Disk: "9GB"})
+	item, err := backend.Create(context.Background(), alice, core.CreateOptions{Name: "small", CPU: 1, Memory: "2000MB", Processes: 64, Disk: "9GB"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if item.CPU != "1" || item.Memory != "2000MB" || item.Disk != "9GB" {
+	if item.CPU != "1" || item.Memory != "2000MB" || item.Processes != "64" || item.Disk != "9GB" {
 		t.Fatalf("wrong resources: %#v", item)
 	}
 	calls := f.calls(t)
 	got := calls[len(calls)-1]
-	want := []string{"--force-local", "--project", "developers", "--quiet", "launch", "images:debian/12", "small", "--profile", "development", "--config", ownerKey + "=alice", "--config", "limits.cpu=1", "--config", "limits.memory=2000MB", "--config", "limits.processes=256", "--config", "boot.autostart=false", "--config", "security.privileged=false", "--config", "security.nesting=false", "--device", "root,size=9GB"}
+	want := []string{"--force-local", "--project", "developers", "--quiet", "launch", "images:debian/12", "small", "--profile", "development", "--config", ownerKey + "=alice", "--config", "limits.cpu=1", "--config", "limits.memory=2000MB", "--config", "limits.processes=64", "--config", "boot.autostart=false", "--config", "security.privileged=false", "--config", "security.nesting=false", "--device", "root,size=9GB"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("launch arguments\ngot:  %q\nwant: %q", got, want)
 	}
 	item, err = backend.Create(context.Background(), alice, core.CreateOptions{})
-	if err != nil || !strings.HasPrefix(item.Name, "dev-") || !validName(item.Name) || item.CPU != "2" || item.Memory != "2GiB" || item.Disk != "10GiB" {
+	if err != nil || !names.Valid(item.Name) || !validName(item.Name) || item.CPU != "1" || item.Memory != "2GiB" || item.Processes != "256" || item.Disk != "10GiB" {
 		t.Fatalf("default create = %#v, %v", item, err)
+	}
+	launch := f.calls(t)
+	last := launch[len(launch)-1]
+	for _, arg := range []string{"limits.cpu=1", "limits.memory=2GiB", "limits.processes=256"} {
+		found := false
+		for _, value := range last {
+			found = found || value == arg
+		}
+		if !found {
+			t.Fatalf("default launch missing %q: %q", arg, last)
+		}
+	}
+}
+
+func TestDefaultsAndExplicitRequestsWithinMaxima(t *testing.T) {
+	f := newFixture(t, nil, scenario{})
+	config := f.config
+	config.Limits = core.Limits{MaxInstances: 2, CPU: 4, Memory: "4GiB", Processes: 512}
+	config.AvailableMemory = func() (uint64, error) { return 8 << 30, nil }
+	backend, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := backend.Create(context.Background(), alice, core.CreateOptions{Name: "defaults"})
+	if err != nil || item.CPU != "1" || item.Memory != "2GiB" || item.Processes != "256" {
+		t.Fatalf("default create = %#v, %v", item, err)
+	}
+	item, err = backend.Create(context.Background(), alice, core.CreateOptions{Name: "explicit", CPU: 1, Memory: "512MiB", Processes: 64})
+	if err != nil || item.CPU != "1" || item.Memory != "512MiB" || item.Processes != "64" {
+		t.Fatalf("explicit create = %#v, %v", item, err)
+	}
+	calls := f.calls(t)
+	defaultLaunch := calls[1]
+	for _, arg := range []string{"limits.cpu=1", "limits.memory=2GiB", "limits.processes=256"} {
+		found := false
+		for _, value := range defaultLaunch {
+			found = found || value == arg
+		}
+		if !found {
+			t.Fatalf("default launch missing %q: %q", arg, defaultLaunch)
+		}
+	}
+	last := calls[len(calls)-1]
+	for _, arg := range []string{"limits.cpu=1", "limits.memory=512MiB", "limits.processes=64"} {
+		found := false
+		for _, value := range last {
+			found = found || value == arg
+		}
+		if !found {
+			t.Fatalf("explicit launch missing %q: %q", arg, last)
+		}
+	}
+}
+
+func TestMemoryAdmission(t *testing.T) {
+	newAdmissionBackend := func(t *testing.T, available uint64) (*fixture, *Backend) {
+		t.Helper()
+		f := newFixture(t, nil, scenario{})
+		config := f.config
+		config.Limits.Memory = "4GiB"
+		config.AvailableMemory = func() (uint64, error) { return available, nil }
+		backend, err := New(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f, backend
+	}
+
+	t.Run("accepts boundary", func(t *testing.T) {
+		f, backend := newAdmissionBackend(t, 3<<30)
+		if _, err := backend.Create(context.Background(), alice, core.CreateOptions{Name: "boundary", Memory: "2GiB"}); err != nil {
+			t.Fatal(err)
+		}
+		if len(f.calls(t)) != 2 {
+			t.Fatalf("boundary request did not launch: %v", f.calls(t))
+		}
+	})
+
+	t.Run("rejects above boundary", func(t *testing.T) {
+		f, backend := newAdmissionBackend(t, 3<<30)
+		if _, err := backend.Create(context.Background(), alice, core.CreateOptions{Name: "over", Memory: "3221225473B"}); err == nil || !strings.Contains(err.Error(), "cannot admit") {
+			t.Fatalf("above boundary error = %v", err)
+		}
+		for _, call := range f.calls(t) {
+			if call[4] == "launch" {
+				t.Fatalf("rejected request launched: %v", call)
+			}
+		}
+	})
+
+	t.Run("rejects when reserve would be consumed", func(t *testing.T) {
+		f, backend := newAdmissionBackend(t, 2<<30)
+		if _, err := backend.Create(context.Background(), alice, core.CreateOptions{Name: "tight", Memory: "2GiB"}); err == nil || !strings.Contains(err.Error(), "cannot admit") {
+			t.Fatalf("insufficient host memory error = %v", err)
+		}
+		for _, call := range f.calls(t) {
+			if call[4] == "launch" {
+				t.Fatalf("rejected request launched: %v", call)
+			}
+		}
+	})
+
+	t.Run("fails closed when availability is unknown", func(t *testing.T) {
+		f := newFixture(t, nil, scenario{})
+		f.backend.config.AvailableMemory = func() (uint64, error) { return 0, errors.New("no meminfo") }
+		if _, err := f.backend.Create(context.Background(), alice, core.CreateOptions{Name: "unknown"}); err == nil || !strings.Contains(err.Error(), "cannot verify host memory availability") {
+			t.Fatalf("unknown availability error = %v", err)
+		}
+		for _, call := range f.calls(t) {
+			if call[4] == "launch" {
+				t.Fatalf("unknown availability launched: %v", call)
+			}
+		}
+	})
+}
+
+func TestSequentialCreatesShareCommittedMemoryBudget(t *testing.T) {
+	f := newFixture(t, nil, scenario{})
+	config := f.config
+	config.Limits = core.Limits{MaxInstances: 10, CPU: 2, Memory: "4GiB", Processes: 512}
+	config.AvailableMemory = func() (uint64, error) { return 4 << 30, nil }
+	backend, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.Create(context.Background(), alice, core.CreateOptions{Name: "first", Memory: "2GiB"}); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	if _, err := backend.Create(context.Background(), alice, core.CreateOptions{Name: "second", Memory: "2GiB"}); err == nil || !strings.Contains(err.Error(), "cannot admit") {
+		t.Fatalf("overcommitted aggregate error = %v", err)
+	}
+	if _, err := backend.Create(context.Background(), alice, core.CreateOptions{Name: "small", Memory: "512MiB"}); err != nil {
+		t.Fatalf("create within remaining budget: %v", err)
+	}
+	if _, err := backend.Create(context.Background(), alice, core.CreateOptions{Name: "exact", Memory: "512MiB"}); err != nil {
+		t.Fatalf("create at exact remaining budget: %v", err)
+	}
+	if _, err := backend.Create(context.Background(), alice, core.CreateOptions{Name: "overflow", Memory: "1B"}); err == nil || !strings.Contains(err.Error(), "cannot admit") {
+		t.Fatalf("create past exact budget error = %v", err)
+	}
+	for _, call := range f.calls(t) {
+		if call[4] == "launch" && strings.Contains(strings.Join(call, " "), "overflow") {
+			t.Fatalf("rejected create launched: %v", call)
+		}
+	}
+}
+
+func TestUnenforceableExistingMemoryFailsClosed(t *testing.T) {
+	for _, raw := range []string{"", "unbounded", "0GiB"} {
+		t.Run(raw, func(t *testing.T) {
+			item := ownedInstance("existing", alice.Name)
+			item.Status = "Stopped"
+			if raw == "" {
+				delete(item.Config, "limits.memory")
+			} else {
+				item.Config["limits.memory"] = raw
+			}
+			f := newFixture(t, []instance{item}, scenario{})
+			if _, err := f.backend.Create(context.Background(), alice, core.CreateOptions{Name: "new"}); err == nil || !strings.Contains(err.Error(), "cannot verify project memory") {
+				t.Fatalf("create error = %v", err)
+			}
+			if err := f.backend.Start(context.Background(), alice, "existing"); err == nil || !strings.Contains(err.Error(), "cannot verify instance memory") {
+				t.Fatalf("start error = %v", err)
+			}
+			if err := f.backend.Restart(context.Background(), alice, "existing"); err == nil || !strings.Contains(err.Error(), "cannot verify instance memory") {
+				t.Fatalf("restart error = %v", err)
+			}
+			for _, call := range f.calls(t) {
+				if call[4] != "list" {
+					t.Fatalf("fail-closed check mutated project: %v", call)
+				}
+			}
+		})
+	}
+}
+
+func TestLifecycleAdmissionExcludesTargetFromCommittedMemory(t *testing.T) {
+	// Budget is 5GiB - 1GiB reserve = 4GiB. Other already commits 2GiB, so the
+	// target's 2GiB fits only when the target is excluded from the total.
+	started := ownedInstance("target", alice.Name)
+	started.Status = "Stopped"
+	f := newFixture(t, []instance{started, ownedInstance("other", alice.Name)}, scenario{})
+	f.backend.config.AvailableMemory = func() (uint64, error) { return 5 << 30, nil }
+	if err := f.backend.Start(context.Background(), alice, "target"); err != nil {
+		t.Fatalf("start at aggregate boundary: %v", err)
+	}
+	calls := f.calls(t)
+	if got := calls[len(calls)-1][4:]; !reflect.DeepEqual(got, []string{"start", "target"}) {
+		t.Fatalf("start args = %q", got)
+	}
+
+	restarted := ownedInstance("target", alice.Name)
+	f = newFixture(t, []instance{restarted, ownedInstance("other", alice.Name)}, scenario{})
+	f.backend.config.AvailableMemory = func() (uint64, error) { return 5 << 30, nil }
+	if err := f.backend.Restart(context.Background(), alice, "target"); err != nil {
+		t.Fatalf("restart at aggregate boundary: %v", err)
+	}
+	calls = f.calls(t)
+	if got := calls[len(calls)-1][4:]; !reflect.DeepEqual(got, []string{"restart", "target", "--force=false", "--timeout=5"}) {
+		t.Fatalf("restart args = %q", got)
+	}
+
+	tooSmall := ownedInstance("target", alice.Name)
+	tooSmall.Status = "Stopped"
+	f = newFixture(t, []instance{tooSmall, ownedInstance("other", alice.Name)}, scenario{})
+	f.backend.config.AvailableMemory = func() (uint64, error) { return 3 << 30, nil }
+	if err := f.backend.Start(context.Background(), alice, "target"); err == nil || !strings.Contains(err.Error(), "cannot admit") {
+		t.Fatalf("start over budget error = %v", err)
+	}
+	if err := f.backend.Restart(context.Background(), alice, "target"); err == nil || !strings.Contains(err.Error(), "cannot admit") {
+		t.Fatalf("restart over budget error = %v", err)
+	}
+	for _, call := range f.calls(t) {
+		if call[4] == "start" || call[4] == "restart" {
+			t.Fatalf("over-budget lifecycle reached CLI: %v", call)
+		}
+	}
+}
+
+func TestStartCannotExceedAdministratorMemoryCap(t *testing.T) {
+	target := ownedInstance("target", alice.Name)
+	target.Status = "Stopped"
+	target.Config["limits.memory"] = "3GiB"
+	f := newFixture(t, []instance{target}, scenario{})
+	if err := f.backend.Start(context.Background(), alice, "target"); err == nil || !strings.Contains(err.Error(), "exceeds maximum") {
+		t.Fatalf("start above administrator cap error = %v", err)
+	}
+	for _, call := range f.calls(t) {
+		if call[4] != "list" {
+			t.Fatalf("over-cap start reached CLI: %v", call)
+		}
+	}
+}
+
+func TestRestartRunningGuestDoesNotDoubleChargeResidentMemory(t *testing.T) {
+	target := ownedInstance("target", alice.Name)
+	target.Config["limits.memory"] = "4GiB"
+	f := newFixture(t, []instance{target}, scenario{})
+	f.backend.memory = 4 << 30
+	f.backend.config.Limits.Memory = "4GiB"
+	f.backend.config.AvailableMemory = func() (uint64, error) {
+		t.Fatal("running guest memory was charged a second time")
+		return 0, nil
+	}
+	if err := f.backend.Restart(context.Background(), alice, target.Name); err != nil {
+		t.Fatal(err)
+	}
+	calls := f.calls(t)
+	if calls[len(calls)-1][4] != "restart" {
+		t.Fatalf("restart did not reach Incus: %v", calls)
+	}
+	// Lowered operator ceilings remain authoritative even for a running guest.
+	f.backend.memory = 2 << 30
+	if err := f.backend.Restart(context.Background(), alice, target.Name); err == nil {
+		t.Fatal("restart ignored the lower operator ceiling")
+	}
+}
+
+func TestStartCannotExceedAdministratorCPUOrProcessCaps(t *testing.T) {
+	target := ownedInstance("target", alice.Name)
+	target.Status = "Stopped"
+	target.Config["limits.cpu"] = "2"
+	f := newFixture(t, []instance{target}, scenario{})
+	config := f.config
+	config.Limits.CPU = 1
+	backend, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.Start(context.Background(), alice, "target"); err == nil || !strings.Contains(err.Error(), "CPU limit") {
+		t.Fatalf("start above CPU cap error = %v", err)
+	}
+
+	target = ownedInstance("target", alice.Name)
+	target.Status = "Stopped"
+	target.Config["limits.cpu"] = "1"
+	target.Config["limits.processes"] = "256"
+	f = newFixture(t, []instance{target}, scenario{})
+	config = f.config
+	config.Limits.Processes = 128
+	backend, err = New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.Start(context.Background(), alice, "target"); err == nil || !strings.Contains(err.Error(), "process limit") {
+		t.Fatalf("start above process cap error = %v", err)
+	}
+	for _, call := range f.calls(t) {
+		if call[4] != "list" {
+			t.Fatalf("over-cap start reached CLI: %v", call)
+		}
+	}
+}
+
+func TestStartingAnActiveInstanceNeedsNoAdmission(t *testing.T) {
+	f := newFixture(t, []instance{ownedInstance("running", alice.Name)}, scenario{})
+	f.backend.config.AvailableMemory = func() (uint64, error) { return 1 << 30, nil }
+	if err := f.backend.Start(context.Background(), alice, "running"); err != nil {
+		t.Fatalf("already-running start was blocked by admission: %v", err)
+	}
+	calls := f.calls(t)
+	if got := calls[len(calls)-1][4:]; !reflect.DeepEqual(got, []string{"start", "running"}) {
+		t.Fatalf("start args = %q", got)
+	}
+}
+
+func TestExplicitRequestsUpToMaxima(t *testing.T) {
+	f := newFixture(t, nil, scenario{})
+	config := f.config
+	maxCPU := 4
+	if cores := runtime.NumCPU(); cores > 0 && cores < maxCPU {
+		maxCPU = cores
+	}
+	config.Limits = core.Limits{MaxInstances: 4, CPU: maxCPU, Memory: "4GiB", Processes: 512}
+	config.AvailableMemory = func() (uint64, error) { return 8 << 30, nil }
+	backend, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := backend.Create(context.Background(), alice, core.CreateOptions{Name: "max", CPU: maxCPU, Memory: "4GiB", Processes: 512})
+	if err != nil || item.CPU != strconv.Itoa(maxCPU) || item.Memory != "4GiB" || item.Processes != "512" {
+		t.Fatalf("maximum create = %#v, %v", item, err)
+	}
+	for _, options := range []core.CreateOptions{
+		{Name: "cpu", CPU: maxCPU + 1},
+		{Name: "processes", Processes: 513},
+		{Name: "memory", Memory: "4097MiB"},
+	} {
+		if _, err := backend.Create(context.Background(), alice, options); err == nil {
+			t.Fatalf("accepted above maximum %#v", options)
+		}
+	}
+}
+
+func TestProjectMemoryOverflowFailsClosed(t *testing.T) {
+	items := []instance{
+		{Name: "a", Config: map[string]string{"limits.memory": "9223372036854775807B"}},
+		{Name: "b", Config: map[string]string{"limits.memory": "9223372036854775807B"}},
+		{Name: "c", Config: map[string]string{"limits.memory": "9223372036854775807B"}},
+	}
+	if _, err := projectMemory(items, ""); err == nil || !strings.Contains(err.Error(), "overflows") {
+		t.Fatalf("overflow error = %v", err)
+	}
+	if committed, err := projectMemory(items, "a"); err != nil || committed != (^uint64(0)-1) {
+		t.Fatalf("excluding a = %d, %v", committed, err)
+	}
+}
+
+func TestGracefulFlagsNeverForce(t *testing.T) {
+	for _, tc := range []struct {
+		timeout time.Duration
+		want    []string
+	}{
+		{150 * time.Millisecond, []string{"--force=false", "--timeout=1"}},
+		{time.Second, []string{"--force=false", "--timeout=1"}},
+		{30 * time.Second, []string{"--force=false", "--timeout=30"}},
+	} {
+		if got := gracefulFlags(tc.timeout); !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("gracefulFlags(%v) = %q, want %q", tc.timeout, got, tc.want)
+		}
+	}
+}
+
+func TestCPUCeilingMatchesRuntime(t *testing.T) {
+	f := newFixture(t, nil, scenario{})
+	config := f.config
+	config.Limits.CPU = 1
+	backend, err := New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := backend.cpuCeiling(); got != 1 {
+		t.Fatalf("single CPU ceiling = %d", got)
+	}
+	config.Limits.CPU = runtime.NumCPU() + 1000
+	backend, err = New(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := backend.cpuCeiling(), runtime.NumCPU(); got != want {
+		t.Fatalf("CPU ceiling = %d, want runtime cores %d", got, want)
+	}
+}
+
+func TestProcessLimitsAreReportedFromAppliedConfig(t *testing.T) {
+	f := newFixture(t, nil, scenario{})
+	created, err := f.backend.Create(context.Background(), alice, core.CreateOptions{Name: "processes", Processes: 128})
+	if err != nil || created.Processes != "128" {
+		t.Fatalf("create process metadata = %#v, %v", created, err)
+	}
+	calls := f.calls(t)
+	launch := calls[len(calls)-1]
+	found := false
+	for _, arg := range launch {
+		found = found || arg == "limits.processes=128"
+	}
+	if !found {
+		t.Fatalf("launch missing applied process limit: %q", launch)
+	}
+
+	item := ownedInstance("processes", alice.Name)
+	item.Config["limits.processes"] = "999"
+	item.ExpandedConfig = map[string]string{ownerKey: alice.Name, "limits.cpu": "1", "limits.memory": "2GiB", "limits.processes": "128"}
+	writeJSON(t, filepath.Join(f.dir, "instances.json"), []instance{item})
+	listed, err := f.backend.List(context.Background(), alice)
+	if err != nil || len(listed) != 1 || listed[0].Processes != "128" {
+		t.Fatalf("listed process metadata = %#v, %v", listed, err)
+	}
+}
+
+func TestParseMemAvailable(t *testing.T) {
+	value, err := parseMemAvailable([]byte("MemTotal:       16384000 kB\nMemAvailable:    6291456 kB\n"))
+	if err != nil || value != 6<<30 {
+		t.Fatalf("parseMemAvailable = %d, %v", value, err)
+	}
+	for _, data := range []string{"", "MemFree: 1 kB\n", "MemAvailable: 1234\n", "MemAvailable: 0 kB\n", "MemAvailable: 12 MB\n", "MemAvailable: nope kB\n"} {
+		if _, err := parseMemAvailable([]byte(data)); err == nil {
+			t.Errorf("accepted %q", data)
+		}
 	}
 }
 
@@ -428,6 +921,24 @@ func TestResourceUnitsAreCanonicalInArgumentsAndSummaries(t *testing.T) {
 				t.Fatalf("listed resources differ from applied resources: %#v, %v", listed, err)
 			}
 		})
+	}
+}
+
+func TestAdmitMemoryAccountsForCommitted(t *testing.T) {
+	f := newFixture(t, nil, scenario{})
+	f.backend.config.AvailableMemory = func() (uint64, error) { return 4 << 30, nil }
+	if err := f.backend.admitMemory("2GiB", 2<<30, 0); err != nil {
+		t.Fatalf("first request rejected: %v", err)
+	}
+	if err := f.backend.admitMemory("2GiB", 2<<30, 2<<30); err == nil {
+		t.Fatal("accepted overcommitted aggregate")
+	}
+	if err := f.backend.admitMemory("512MiB", 512<<20, 2<<30); err != nil {
+		t.Fatalf("request within remaining budget rejected: %v", err)
+	}
+	f.backend.config.AvailableMemory = func() (uint64, error) { return 1 << 30, nil }
+	if err := f.backend.admitMemory("1B", 1, 0); err == nil {
+		t.Fatal("accepted when available equals the reserve")
 	}
 }
 
@@ -515,6 +1026,45 @@ func TestMetadataTimeoutAndBoundedErrors(t *testing.T) {
 		cancel()
 		if _, err := f.backend.Create(ctx, alice, core.CreateOptions{Name: "new"}); !errors.Is(err, context.Canceled) {
 			t.Fatalf("lock cancellation = %v", err)
+		}
+	})
+	t.Run("lifecycle timeout", func(t *testing.T) {
+		for _, action := range []string{"start", "stop", "restart"} {
+			t.Run(action, func(t *testing.T) {
+				f := newFixture(t, []instance{ownedInstance("mine", alice.Name)}, scenario{Block: action})
+				f.backend.config.OperationTimeout = 150 * time.Millisecond
+				var err error
+				switch action {
+				case "start":
+					err = f.backend.Start(context.Background(), alice, "mine")
+				case "stop":
+					err = f.backend.Stop(context.Background(), alice, "mine")
+				case "restart":
+					err = f.backend.Restart(context.Background(), alice, "mine")
+				}
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("%s timeout = %v", action, err)
+				}
+			})
+		}
+	})
+	t.Run("cancel waiting for lifecycle lock", func(t *testing.T) {
+		f := newFixture(t, []instance{ownedInstance("mine", alice.Name)}, scenario{})
+		f.backend.gate <- struct{}{}
+		defer func() { <-f.backend.gate }()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		for name, call := range map[string]func() error{
+			"start":   func() error { return f.backend.Start(ctx, alice, "mine") },
+			"stop":    func() error { return f.backend.Stop(ctx, alice, "mine") },
+			"restart": func() error { return f.backend.Restart(ctx, alice, "mine") },
+		} {
+			if err := call(); !errors.Is(err, context.Canceled) {
+				t.Fatalf("%s lock cancellation = %v", name, err)
+			}
+		}
+		if calls := f.calls(t); len(calls) != 0 {
+			t.Fatalf("lock cancellation reached CLI: %v", calls)
 		}
 	})
 }

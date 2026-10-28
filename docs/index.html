@@ -9,6 +9,8 @@
 </head>
 <body>
 
+<a class="skip-link" href="#main">Skip to content</a>
+
 <header class="top">
   <div class="wrap">
     <a class="brand" href="index.html">
@@ -23,7 +25,7 @@
   </div>
 </header>
 
-<main>
+<main id="main">
 
   <section class="hero">
     <div class="wrap layout">
@@ -37,23 +39,28 @@
           <a class="button solid" href="docs.html">Read the documentation</a>
           <a class="button" href="https://github.com/4nkitd/incus.ssh">Browse the code</a>
         </div>
-        <p class="meta">MIT licensed. Go 1.26+. Incus 6.0 tested.</p>
+        <p class="meta">MIT licensed. Go 1.26+. Incus 6.0 tested.<br>
+          v0.2.0. Linux amd64 and macOS arm64 archives available on GitHub Releases.</p>
       </div>
 
-      <div class="term" aria-label="Example SSH session">
+      <div class="term" role="group" aria-label="Example SSH session">
         <div class="bar"><span>your machine</span><span>ssh</span></div>
-<pre><span class="c">$ ssh -p 2222 you@gateway</span>
+<pre tabindex="0"><span class="c">$ ssh -p 2222 you@GATEWAY</span>
 <span class="b">Incus development gateway. Type help for commands; exit to disconnect.</span>
-<span class="p">incus&gt;</span> new --name=demo
-<span class="o">demo    Running</span>
+<span class="p">incus&gt;</span> new --cpu=2 --memory=4GiB --processes=512
+<span class="o">mango   Running</span>
 <span class="p">incus&gt;</span> ls
-<span class="o">demo    Running</span>
-<span class="p">incus&gt;</span> ssh demo
-<span class="c">root@demo:~#</span> uname -s
+<span class="o">mango   Running</span>
+<span class="p">incus&gt;</span> stop mango
+<span class="o">stopped mango</span>
+<span class="p">incus&gt;</span> start mango
+<span class="o">started mango</span>
+<span class="p">incus&gt;</span> ssh mango
+<span class="c">root@mango:~#</span> uname -s
 <span class="o">Linux</span>
-<span class="c">root@demo:~#</span> exit
+<span class="c">root@mango:~#</span> exit
 <span class="p">incus&gt;</span> exit
-<span class="c">Connection to gateway closed.</span></pre>
+<span class="c">Connection to GATEWAY closed.</span></pre>
       </div>
     </div>
   </section>
@@ -77,7 +84,7 @@
       </div>
 
       <div class="split">
-        <div class="diagram" aria-label="Request path">
+        <div class="diagram" role="group" aria-label="Request path">
           <div class="row">
             <div class="n">1</div>
             <div><div class="what">Public-key SSH to a private listener</div><div class="how">The listener binds loopback or an address in Tailscale's IPv4 range, not the host's administrative port.</div></div>
@@ -111,14 +118,14 @@
           <h3>Limits live in two places</h3>
           <p>
             The project restricts what a container may do. The application enforces ownership, name rules and
-            resource ceilings. Neither relies on the client behaving well.
+            per-container resource maxima. Neither relies on the client behaving well.
           </p>
 
           <h3>Unsupported is a real answer</h3>
           <p>
-            <code>pause</code>, SFTP, previews and port forwarding are not quietly approximated. They fail with a
-            clear error. <code>pause</code> is impossible to do honestly with Incus containers; SFTP, previews and
-            forwarding are intentionally not implemented in V1.
+            <code>pause</code>, SFTP, previews, Docker and OpenTunnel-style exposure are not quietly approximated.
+            They are outside Phase 1 and fail rather than pretend. <code>pause</code> cannot be done honestly with
+            Incus containers; freeze keeps RAM and stop loses process state.
           </p>
         </div>
       </div>
@@ -128,17 +135,19 @@
   <section id="commands">
     <div class="wrap">
       <div class="section-head">
-        <h2>Seven commands. No hidden verbs.</h2>
+        <h2>A small command set. No hidden verbs.</h2>
         <p>Management flags use <code>=</code> for values. Everything after <code>ssh NAME</code> belongs to the guest.</p>
       </div>
 
       <div class="cmdlist">
         <div class="cmd"><code>help</code><p>Show the supported subset.<span><code>?</code> and <code>help all</code> also work.</span></p></div>
         <div class="cmd"><code>whoami</code><p>Return the authenticated app user and project.<span>Useful as a first connectivity test.</span></p></div>
-        <div class="cmd"><code>new</code><p>Launch and start an owned container.<span><code>--name=</code>, <code>--cpu=</code>, <code>--memory=</code></span></p></div>
+        <div class="cmd"><code>new</code><p>Launch and start an owned container.<span>Fruit name by default; <code>--name=</code>, <code>--cpu=</code>, <code>--memory=</code>, <code>--processes=</code>, <code>--disk=</code>.</span></p></div>
         <div class="cmd"><code>ls</code><p>List only containers you own.<span><code>-l</code> adds known limits; accepts one name or glob.</span></p></div>
         <div class="cmd"><code>ssh</code><p>Open a guest shell or run one remote command.<span>Streams stdin, stderr and the guest exit status.</span></p></div>
-        <div class="cmd"><code>resume</code><p>Start a stopped container.<span>Process state is gone. This is not a RAM resume.</span></p></div>
+        <div class="cmd"><code>start</code><p>Start a stopped container.<span><code>resume</code> is an alias. Process state is gone.</span></p></div>
+        <div class="cmd"><code>stop</code><p>Gracefully stop a container.<span>Files persist; running processes do not.</span></p></div>
+        <div class="cmd"><code>restart</code><p>Gracefully restart a container.<span>Same data, fresh processes.</span></p></div>
         <div class="cmd"><code>rm</code><p>Permanently delete named containers.<span>Deletes the root filesystem, even while running.</span></p></div>
       </div>
 
@@ -165,6 +174,7 @@
             <li>No passwords, anonymous auth or automatic account creation</li>
             <li>Fixed project, image and profile; no client overrides</li>
             <li>Owner-label checks on list, exec and lifecycle operations</li>
+            <li>CPU, memory and process limits per container</li>
             <li>Session channels only; agent, X11, environment and TCP forwarding refused</li>
             <li>Strict host-key checking in the optional Go client</li>
           </ul>
@@ -176,8 +186,8 @@
             <li>Block guest access to host, private-network and cloud metadata endpoints</li>
             <li>Protect the Incus socket: its access is effectively host-root authority</li>
             <li>Provide disk quotas if the storage backend supports them</li>
+            <li>Size the host for committed RAM; swap is not part of the policy</li>
             <li>Keep backups; persistence is not a backup strategy</li>
-            <li>Review the single-user limit before putting other people on it</li>
           </ul>
         </div>
       </div>
@@ -187,9 +197,10 @@
   <section id="install">
     <div class="wrap">
       <div class="section-head">
-        <h2>From a fresh host to a shell.</h2>
+        <h2>From source to a shell.</h2>
         <p>
-          The repository ships templates and a build procedure, not a universal installer. Host prerequisites come first.
+          The repository ships templates and a build procedure, not a universal installer. Build on Linux first, then
+          prepare Incus and install the service.
         </p>
       </div>
 
@@ -197,28 +208,28 @@
         <div class="steps">
           <div class="step">
             <div>
-              <h3>Prepare Incus</h3>
-              <p>Install and initialise Incus. Provide the storage pool and managed bridge named in the templates, or update both templates.</p>
-              <pre class="block">incus project create ifd-dev
-incus project edit ifd-dev &lt; deploy/project.yaml
-incus --project ifd-dev profile create ifd
-incus --project ifd-dev profile edit ifd &lt; deploy/profile.yaml</pre>
-            </div>
-          </div>
-          <div class="step">
-            <div>
               <h3>Build on Linux</h3>
-              <p>Build and test somewhere approved for compilation, not the target host.</p>
-              <pre class="block">go test -race ./...
+              <p>Build and test somewhere approved for compilation, not the target host. Keep the Linux binary; do not overwrite it with a cross-compiled client.</p>
+              <pre class="block" tabindex="0">go mod verify
+go test -race ./...
 go vet ./...
 go build -trimpath -o bin/incus-for-devs ./cmd/incus-for-devs</pre>
             </div>
           </div>
           <div class="step">
             <div>
+              <h3>Prepare Incus</h3>
+              <p>Provide the storage pool, managed bridge and a cached image. Copy the build output and templates to the host, then run setup from that checkout. Setup checks them and, with <code>--apply</code>, creates missing project and profile resources; its default is a plan, and apply requires root.</p>
+              <pre class="block" tabindex="0">./bin/incus-for-devs setup --templates deploy
+sudo ./bin/incus-for-devs setup --templates deploy --apply</pre>
+              <p>The default image is the cached alias <code>ifd-ubuntu-24-04</code>. <code>--image</code> accepts a local alias, an optional <code>local:</code> prefix or a 64-character fingerprint; remote references are rejected and nothing is downloaded. The plan checks the daemon, pool, bridge and image, not the templates. Apply validates strict typed YAML, creates only missing resources, and fails on a mismatch instead of overwriting. OVN networks are not supported.</p>
+            </div>
+          </div>
+          <div class="step">
+            <div>
               <h3>Configure and generate a host key</h3>
-              <p>Use a dedicated nologin service account. Replace every placeholder in the example configuration.</p>
-              <pre class="block">useradd --system --user-group \
+              <p>Install the Linux binary on the host. Use a dedicated nologin service account, and replace every placeholder in the example configuration.</p>
+              <pre class="block" tabindex="0">useradd --system --user-group \
   --home-dir /var/lib/incus-for-devs \
   --shell /usr/sbin/nologin incus-for-devs
 install -d -o incus-for-devs -g incus-for-devs -m 0700 /var/lib/incus-for-devs
@@ -240,9 +251,11 @@ systemctl enable --now incus-for-devs.service</pre>
             <div>
               <h3>Verify with a disposable container</h3>
               <p>Verify the host-key fingerprint, log in, create one container you can lose, run a command, then remove it.</p>
-              <pre class="block">ssh -p 2222 you@GATEWAY help
+              <pre class="block" tabindex="0">ssh -p 2222 you@GATEWAY help
 ssh -p 2222 you@GATEWAY new --name=operator-check
 ssh -p 2222 you@GATEWAY ssh operator-check 'uname -a'
+ssh -p 2222 you@GATEWAY stop operator-check
+ssh -p 2222 you@GATEWAY start operator-check
 ssh -p 2222 you@GATEWAY rm operator-check</pre>
             </div>
           </div>
@@ -251,18 +264,25 @@ ssh -p 2222 you@GATEWAY rm operator-check</pre>
         <div class="prose">
           <h3>Settings that matter</h3>
           <p>
-            The listener must be loopback or an address in Tailscale's IPv4 range on a nonprivileged port. Range checks are
+            The listener must be loopback or an address in Tailscale's range on a nonprivileged port. Range checks are
             not proof of tailnet membership. The configuration file must not be writable by group or others. The host key must
             be a private regular file and must survive restarts, or every client will see a changed-host warning.
           </p>
           <p>
-            <code>config.example.json</code> is a shape to copy. It points at loopback, uses a placeholder key and references a
-            remote image. It will not work unedited.
+            <code>config.example.json</code> is a shape to copy. It points at loopback, uses a placeholder key and the
+            cached image alias, and sets operator maxima of 2 CPU, 4GiB memory and 512 processes. It will not work
+            unedited.
           </p>
           <div class="callout good">
-            <strong>Start narrow.</strong> One app user, one container, one CPU and 2 GiB is a reasonable pilot. Raise limits
-            after you have measured real use and confirmed the storage quota.
+            <strong>Start narrow.</strong> New containers default to 1 CPU, 2GiB and 256 processes. Users can ask for more
+            up to the operator's maxima when the host has room, so set those maxima deliberately.
           </div>
+          <p>
+            Memory admission keeps a 1GiB reserve, subtracts memory already committed to the project and refuses
+            a create or stopped-instance start when it does not fit. Active restarts do not charge resident memory twice. Start and restart also revalidate the stored
+            limits against current maxima. CPU maxima are per-container caps, not a scheduler. Swap is not configured,
+            counted or promised: size the host for RAM.
+          </p>
           <p><a href="docs.html#install">Full installation and configuration guide</a></p>
         </div>
       </div>
@@ -273,21 +293,23 @@ ssh -p 2222 you@GATEWAY rm operator-check</pre>
     <div class="wrap">
       <div class="section-head">
         <h2>Honest gaps.</h2>
-        <p>These are not roadmap promises. They are the parts of the experience V1 does not provide.</p>
+        <p>These are not roadmap promises. They are the parts of the experience Phase 1 does not provide.</p>
       </div>
 
-      <div class="tablewrap">
+      <div class="tablewrap" tabindex="0" role="region" aria-label="Phase 1 capability status">
         <table>
-          <thead><tr><th scope="col">Capability</th><th scope="col">V1 status</th></tr></thead>
+          <thead><tr><th scope="col">Capability</th><th scope="col">Phase 1 status</th></tr></thead>
           <tbody>
-            <tr><td><code>pause</code> and RAM checkpoint</td><td>Not implemented. Incus freeze (operator-only) keeps RAM; stop loses process state.</td></tr>
-            <tr><td>SFTP, SCP, rsync</td><td>No file-transfer endpoint. Subsystem requests are rejected.</td></tr>
-            <tr><td>Web previews and sharing</td><td>Not implemented.</td></tr>
-            <tr><td>Direct per-container hostnames</td><td>Not implemented. Use the gateway's <code>ssh NAME</code>.</td></tr>
-            <tr><td>Multiple app users</td><td>Configuration admits exactly one user.</td></tr>
-            <tr><td>Disk quotas</td><td>Depends on the storage backend. A directory pool may not enforce one.</td></tr>
-            <tr><td>Host reboot recovery</td><td>Not verified. Guest autostart is disabled.</td></tr>
-            <tr><td>VM-grade isolation</td><td>Not provided. Containers share the host kernel.</td></tr>
+            <tr><th scope="row"><code>pause</code> and RAM checkpoint</th><td>Not implemented. Incus freeze (operator-only) keeps RAM; stop loses process state.</td></tr>
+            <tr><th scope="row">SFTP, SCP, rsync</th><td>No file-transfer endpoint. Subsystem requests are rejected.</td></tr>
+            <tr><th scope="row">Web previews and sharing</th><td>Not implemented.</td></tr>
+            <tr><th scope="row">Docker and nested containers</th><td>Not supported. Nesting is blocked by the project and profile.</td></tr>
+            <tr><th scope="row">OpenTunnel-style exposure</th><td>Not implemented. No public per-container tunnel.</td></tr>
+            <tr><th scope="row">Direct per-container hostnames</th><td>Not implemented. Use the gateway's <code>ssh NAME</code>.</td></tr>
+            <tr><th scope="row">Multiple app users</th><td>Configuration admits exactly one user.</td></tr>
+            <tr><th scope="row">Disk quotas</th><td>Depends on the storage backend. A directory pool may not enforce one.</td></tr>
+            <tr><th scope="row">Host reboot recovery</th><td>Not verified. Guest autostart is disabled.</td></tr>
+            <tr><th scope="row">VM-grade isolation</th><td>Not provided. Containers share the host kernel.</td></tr>
           </tbody>
         </table>
       </div>
@@ -300,7 +322,7 @@ ssh -p 2222 you@GATEWAY rm operator-check</pre>
   <div class="wrap">
     <div class="left">
       <strong>incus.ssh</strong><br>
-      An independent project, not affiliated with Incus or exe.dev. MIT licensed.
+      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.2.0.
     </div>
     <nav aria-label="Footer">
       <a href="docs.html">Documentation</a>
