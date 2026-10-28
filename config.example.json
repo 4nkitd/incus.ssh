@@ -1,0 +1,21 @@
+{
+  "listen": "127.0.0.1:2222",
+  "host_key": "/var/lib/incus-for-devs/host.key",
+  "incus_binary": "/usr/bin/incus",
+  "image": "images:ubuntu/24.04",
+  "profile": "ifd",
+  "operation_timeout_seconds": 120,
+  "max_sessions": 8,
+  "limits": {
+    "max_instances": 1,
+    "cpu": 1,
+    "memory": "2GiB"
+  },
+  "users": [
+    {
+      "name": "you",
+      "project": "ifd-dev",
+      "authorized_keys": ["REPLACE_WITH_YOUR_SSH_PUBLIC_KEY"]
+    }
+  ]
+}

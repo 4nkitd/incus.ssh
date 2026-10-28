@@ -1,0 +1,20 @@
+config:
+  features.images: "false"
+  features.profiles: "true"
+  features.networks: "false"
+  features.storage.volumes: "true"
+  limits.containers: "1"
+  limits.instances: "1"
+  limits.virtual-machines: "0"
+  limits.cpu: "1"
+  limits.memory: 2GiB
+  limits.processes: "256"
+  restricted: "true"
+  restricted.containers.privilege: isolated
+  restricted.containers.nesting: block
+  restricted.containers.lowlevel: block
+  restricted.devices.disk: block
+  restricted.devices.nic: managed
+  restricted.devices.proxy: block
+  restricted.networks.access: incusbr0
+description: Single-user Incus for devs pilot

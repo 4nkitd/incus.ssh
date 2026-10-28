@@ -1,0 +1,8 @@
+/bin/
+/dist/
+/ops/
+*.test
+coverage.out
+config.local.json
+*.key
+.DS_Store

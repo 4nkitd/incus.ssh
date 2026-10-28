@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documentation · incus-for-devs</title>
+<meta name="description" content="Installation, configuration, commands and security model for incus-for-devs.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="index.html">
+      <span class="glyph" aria-hidden="true"></span>
+      incus-for-devs
+    </a>
+    <nav aria-label="Primary">
+      <a href="index.html">Overview</a>
+      <a class="hide-sm" href="https://github.com/4nkitd/incus-for-devs">GitHub</a>
+      <a class="primary" href="https://github.com/4nkitd/incus-for-devs">View source</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap doc-shell">
+
+  <aside class="doc-nav" aria-label="Documentation sections">
+    <p>Guide</p>
+    <a href="#overview">Overview</a>
+    <a href="#requirements">Requirements</a>
+    <a href="#build">Build and test</a>
+    <a href="#install">Prepare Incus</a>
+    <a href="#configure">Configure</a>
+    <a href="#service">Run as a service</a>
+    <a href="#verify">First login</a>
+    <a href="#commands">Commands</a>
+    <a href="#json">JSON output</a>
+    <a href="#client">Go client</a>
+    <a href="#security">Security model</a>
+    <a href="#limits">Limits</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+    <a href="#development">Development</a>
+    <p class="sub">Project</p>
+    <a href="https://github.com/4nkitd/incus-for-devs">Source</a>
+    <a href="https://github.com/4nkitd/incus-for-devs/issues">Issues</a>
+    <a href="https://github.com/4nkitd/incus-for-devs/blob/main/LICENSE">MIT license</a>
+  </aside>
+
+  <main class="doc-body">
+    <h1>Documentation</h1>
+    <p class="doc-intro">
+      Everything needed to build, install and operate the gateway, plus the boundaries that keep it from becoming a
+      host-access tool. Commands below use <code>GATEWAY</code> and <code>you</code> as placeholders.
+    </p>
+    <p class="doc-meta">V1 · tested with Incus 6.0 on Ubuntu 24.04 · Go 1.26+</p>
+
+    <h2 id="overview">Overview</h2>
+    <p>
+      <code>incus-for-devs</code> is one Go executable with two modes. Server mode runs a private SSH listener beside
+      Incus. Client mode invokes your installed OpenSSH with strict checking and no forwarding. Plain
+      <code>ssh</code> works without the client.
+    </p>
+    <p>
+      The server maps a configured app username and public key to a fixed Incus project. It accepts seven management
+      commands, parses them into fixed argument vectors, and runs <code>incus</code> over the local socket. A guest
+      command executes through <code>/bin/sh -lc</code> inside a container the user owns. No host shell is involved.
+    </p>
+
+    <h2 id="requirements">Requirements</h2>
+    <ul>
+      <li>Linux host with Incus installed and initialised</li>
+      <li>A storage pool and managed network matching the templates, or edited templates</li>
+      <li>An approved image available to the Incus project</li>
+      <li>Root access for installation and project preparation</li>
+      <li>Go 1.26 or newer to build</li>
+      <li>OpenSSH on client machines; the compiled client is optional</li>
+    </ul>
+    <p>
+      The shipped profile expects a pool named <code>devpool</code> and a bridge named <code>incusbr0</code>.
+      <code>incusbr0</code> is also fixed in the project's <code>restricted.networks.access</code>. If you use different
+      names, update the project and profile together.
+    </p>
+
+    <div class="callout">
+      <strong>Guest network policy is operator work.</strong> The repository does not install a firewall. Block guest
+      access to host services, private networks and cloud metadata endpoints, and allow only the DNS and egress the
+      containers need. Test the rules before handing out shells.
+    </div>
+
+    <h2 id="build">Build and test</h2>
+    <p>Build and test on an approved Linux development host, not on the target host.</p>
+<pre class="block">git clone https://github.com/4nkitd/incus-for-devs.git
+cd incus-for-devs
+
+go mod verify
+go test ./...
+go test -race ./...
+go vet ./...
+go build -trimpath -o bin/incus-for-devs ./cmd/incus-for-devs
+
+# optional macOS arm64 client, same filename as the examples below
+GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
+  go build -trimpath -o bin/incus-for-devs ./cmd/incus-for-devs</pre>
+    <p>
+      Unit and SSH integration tests use temporary keys and a fake backend. They do not need Incus. Real lifecycle
+      testing needs a dedicated project and disposable container names.
+    </p>
+
+    <h2 id="install">Prepare Incus</h2>
+    <p>
+      Create a dedicated project and fixed profile. The example restricts privilege, nesting, low-level configuration,
+      host disk devices and proxy devices. It allows one container, one CPU, 2 GiB and 256 processes.
+    </p>
+<pre class="block">incus project create ifd-dev
+incus project edit ifd-dev &lt; deploy/project.yaml
+incus --project ifd-dev profile create ifd
+incus --project ifd-dev profile edit ifd &lt; deploy/profile.yaml
+
+# cache an image and use its local alias in the configuration
+incus image copy images:ubuntu/24.04 local: --alias ifd-ubuntu-24-04
+
+incus project show ifd-dev
+incus --project ifd-dev profile show ifd</pre>
+    <p>
+      Do not enable <code>limits.memory.swap</code> while the project blocks low-level configuration; Incus 6 classifies
+      it as a low-level option and rejects the launch. The profile intentionally omits it.
+    </p>
+
+    <h2 id="configure">Configure</h2>
+    <p>
+      Start from <code>config.example.json</code>. It is a template, not a working deployment. Replace the placeholder
+      key, set the image, choose a listener, and point the host key at the path you will generate. The example's
+      <code>127.0.0.1</code> listener is reachable only on the host; for a remote client, bind the gateway's tailnet
+      address instead.
+    </p>
+<pre class="block">{
+  "listen": "127.0.0.1:2222",
+  "host_key": "/var/lib/incus-for-devs/host.key",
+  "incus_binary": "/usr/bin/incus",
+  "image": "ifd-ubuntu-24-04",
+  "profile": "ifd",
+  "operation_timeout_seconds": 120,
+  "max_sessions": 8,
+  "limits": {
+    "max_instances": 1,
+    "cpu": 1,
+    "memory": "2GiB"
+  },
+  "users": [
+    {
+      "name": "you",
+      "project": "ifd-dev",
+      "authorized_keys": ["ssh-ed25519 AAAA... you@example"]
+    }
+  ]
+}</pre>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">Field</th><th scope="col">Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>listen</code></td><td>Loopback, a Tailscale IPv6 address, or an IPv4 address in <code>100.64.0.0/10</code>; port 1024-65535. This is a range check, not proof of tailnet membership. Wildcard and public binds are rejected.</td></tr>
+          <tr><td><code>host_key</code></td><td>Absolute path to the persistent SSH host key.</td></tr>
+          <tr><td><code>incus_binary</code></td><td>Absolute path to the Incus CLI.</td></tr>
+          <tr><td><code>image</code>, <code>profile</code></td><td>Operator-fixed image and profile. Clients cannot override them.</td></tr>
+          <tr><td><code>limits</code></td><td>Creation defaults and per-container ceilings. <code>max_instances</code> counts instances in the project.</td></tr>
+          <tr><td><code>users</code></td><td>Exactly one app user: name, project and 1-16 public keys.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Configuration must be a regular file not writable by group or others. Keys must be ordinary single-line public
+      keys; authorized-key options, certificates and duplicate keys are rejected. Omit <code>limits.disk</code> when the
+      storage backend cannot enforce a quota; explicit <code>--disk</code> requests then fail.
+    </p>
+
+    <h3>Install the service account and host key</h3>
+<pre class="block">useradd --system --user-group \
+  --home-dir /var/lib/incus-for-devs \
+  --shell /usr/sbin/nologin incus-for-devs
+
+install -d -o incus-for-devs -g incus-for-devs -m 0700 /var/lib/incus-for-devs
+install -d -o root -g incus-for-devs -m 0750 /etc/incus-for-devs
+install -o root -g root -m 0755 bin/incus-for-devs /usr/local/bin/incus-for-devs
+install -o root -g incus-for-devs -m 0640 prepared-config.json /etc/incus-for-devs/config.json
+
+runuser -u incus-for-devs -- /usr/local/bin/incus-for-devs keygen \
+  --path /var/lib/incus-for-devs/host.key</pre>
+    <p>
+      <code>keygen</code> creates a new Ed25519 key with mode <code>0600</code> and refuses to overwrite an existing file.
+      Keep it across upgrades. Losing it changes the fingerprint clients trust.
+    </p>
+
+    <h2 id="service">Run as a service</h2>
+    <p>
+      The repository includes a systemd unit. It runs a nologin account and grants <code>incus-admin</code> only as a
+      supplementary group to the service process.
+    </p>
+<pre class="block">install -o root -g root -m 0644 deploy/incus-for-devs.service \
+  /etc/systemd/system/incus-for-devs.service
+systemctl daemon-reload
+systemctl enable --now incus-for-devs.service
+systemctl status incus-for-devs.service --no-pager</pre>
+    <p>
+      A service that is “active” and a listening socket prove very little. Complete the first-login checks below
+      before treating the deployment as working.
+    </p>
+
+    <h2 id="verify">First login</h2>
+    <p>
+      Obtain the gateway's host-key fingerprint through trusted administrative access. Compare it with what the
+      listener presents, then pin it. Do not skip this because the listener is on a private network.
+    </p>
+<pre class="block">ssh -p 2222 you@GATEWAY help
+ssh -p 2222 you@GATEWAY whoami --json
+ssh -p 2222 you@GATEWAY new --name=operator-check --cpu=1 --memory=2GiB
+ssh -p 2222 you@GATEWAY ssh operator-check 'uname -a'
+ssh -t -p 2222 you@GATEWAY ssh operator-check</pre>
+    <p>When <code>operator-check</code> is confirmed disposable:</p>
+<pre class="block">ssh -p 2222 you@GATEWAY rm operator-check</pre>
+    <div class="callout">
+      <strong>Removal is permanent.</strong> <code>rm</code> force-deletes the container and its root filesystem. It is
+      not a pause and it cannot be undone from the gateway.
+    </div>
+
+    <h2 id="commands">Commands</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">Syntax</th><th scope="col">Behavior</th></tr></thead>
+        <tbody>
+          <tr><td><code>help [all|COMMAND] [--json]</code></td><td>Show the supported subset or one command. <code>?</code> aliases <code>help</code>.</td></tr>
+          <tr><td><code>whoami [--json]</code></td><td>Return the authenticated app user and project.</td></tr>
+          <tr><td><code>new [--name=NAME] [--cpu=N] [--memory=SIZE] [--disk=SIZE] [--json]</code></td><td>Create and start an owned container with the configured image and profile.</td></tr>
+          <tr><td><code>ls [-l] [--json] [name-or-glob]</code></td><td>List owned containers. <code>-l</code> includes known CPU, memory and disk values.</td></tr>
+          <tr><td><code>ssh NAME [COMMAND...]</code></td><td>Open a guest shell or run a guest command. Streams stdin, stdout, stderr and exit status.</td></tr>
+          <tr><td><code>resume NAME [--json]</code></td><td>Start a stopped owned container. Process state is not restored.</td></tr>
+          <tr><td><code>rm [--json] NAME...</code></td><td>Permanently delete each named owned container and its filesystem.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Value flags require <code>=</code>: <code>--cpu=1</code> works, <code>--cpu 1</code> does not. <code>--json</code>
+      is a bare flag. Names use 1-63 lowercase letters, digits or hyphens, start with a letter and end with a letter or
+      digit. Sizes need a positive integer and a unit such as <code>512MiB</code> or <code>2GB</code>. Unknown and
+      duplicate flags fail.
+    </p>
+    <p>
+      After <code>ssh NAME</code>, everything belongs to the guest, including <code>--json</code>. The guest command runs
+      through <code>/bin/sh -lc</code>. Quote the complete command locally when it contains pipes, variables or spaces.
+    </p>
+
+    <h2 id="json">JSON output</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">Call</th><th scope="col">Shape</th></tr></thead>
+        <tbody>
+          <tr><td><code>whoami --json</code></td><td><code>{"name":"you","project":"ifd-dev"}</code></td></tr>
+          <tr><td><code>new --json</code></td><td><code>{"vm_name":"demo","status":"Running","cpu":"1","memory":"2GiB"}</code></td></tr>
+          <tr><td><code>ls --json</code></td><td><code>{"vms":[...]}</code>; an empty list is <code>{"vms":[]}</code></td></tr>
+          <tr><td><code>resume NAME --json</code></td><td><code>{"vm_name":"demo"}</code></td></tr>
+          <tr><td><code>rm NAME --json</code></td><td><code>{"removed":["demo"]}</code>, with an <code>errors</code> map and summary on partial failure</td></tr>
+          <tr><td>Failure with <code>--json</code></td><td><code>{"error":"..."}</code> on stdout with a nonzero exit status</td></tr>
+          <tr><td>Failure without <code>--json</code></td><td>Text on stderr with a nonzero exit status</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      <code>vm_name</code> and <code>vms</code> are compatibility names for containers. The backend creates Incus
+      containers, not virtual machines.
+    </p>
+
+    <h2 id="client">Optional Go client</h2>
+    <p>
+      Client mode replaces itself with OpenSSH. It forces strict host-key checking, disables agent forwarding and clears
+      forwardings. It uses your SSH configuration and agent. Client options come before the management command.
+    </p>
+<pre class="block">./bin/incus-for-devs --target you@GATEWAY --port 2222 help
+./bin/incus-for-devs --target you@GATEWAY --port 2222 ls --json
+./bin/incus-for-devs --target you@GATEWAY --port 2222 ssh demo
+./bin/incus-for-devs --target you@GATEWAY --port 2222 ssh demo 'printf "%s\n" "hello world"'
+
+INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
+    <p>
+      With one argument after <code>ssh NAME</code>, the client sends it as the complete guest command. With several
+      arguments, it quotes each one. Omitting <code>--port</code> leaves the port to OpenSSH configuration; there is no
+      implicit 2222.
+    </p>
+
+    <h2 id="security">Security model</h2>
+    <p>
+      V1 is a single trusted-user gateway for unprivileged development containers. It is not a multiuser service, a
+      hostile-tenant sandbox, or a VM isolation boundary.
+    </p>
+    <ul>
+      <li>Authentication requires both the configured username and a registered public key. Tailscale provides transport, not app identity.</li>
+      <li>The listener accepts loopback, Tailscale's IPv6 prefix, or IPv4 addresses in <code>100.64.0.0/10</code>, on ports 1024-65535. That checks the address range, not tailnet membership or ACLs.</li>
+      <li>The service's Incus socket access is effectively host-root authority. The nologin account and systemd sandbox restrict how it is reached, not what it can do.</li>
+      <li>Containers are unprivileged with an isolated UID map, no nesting, no arbitrary host disk or path mounts and no proxy devices. They share the host kernel.</li>
+      <li>Clients cannot choose a project, profile, image, host mount or raw Incus flag.</li>
+      <li>Only SSH session channels are accepted. Agent, X11, environment, TCP forwarding and subsystem requests are refused.</li>
+      <li>A directory storage pool may not enforce a disk quota. CPU and memory caps do not stop a full disk.</li>
+      <li>Persistence across a graceful stop and resume is not a backup. Host reboot recovery is not verified.</li>
+    </ul>
+    <p>
+      Never expose the Incus socket or <code>incus-admin</code> group to a client or guest. The project restrictions depend
+      on the operator keeping that boundary intact.
+    </p>
+
+    <h2 id="limits">Limits</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">Capability</th><th scope="col">Status</th></tr></thead>
+        <tbody>
+          <tr><td><code>pause</code>, RAM checkpoint</td><td>Unsupported. Incus freeze (operator-only) keeps RAM; stop loses process state.</td></tr>
+          <tr><td>SFTP, SCP, rsync</td><td>No file-transfer endpoint. Do not point those tools at the management port.</td></tr>
+          <tr><td>Previews, sharing</td><td>Not implemented.</td></tr>
+          <tr><td>Direct guest hostnames</td><td>Not implemented. Use <code>ssh NAME</code> through the gateway.</td></tr>
+          <tr><td>Multiuser</td><td>Exactly one configured app user.</td></tr>
+          <tr><td>Custom images, profiles, projects</td><td>Operator-only. No client interface.</td></tr>
+          <tr><td>Tags, snapshots, billing</td><td>Not implemented.</td></tr>
+          <tr><td>Host reboot recovery</td><td>Not verified. Guest autostart is disabled.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="troubleshooting">Troubleshooting</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">Symptom</th><th scope="col">Check</th></tr></thead>
+        <tbody>
+          <tr><td>Permission denied (publickey)</td><td>The username must match a configured app user and the presented key must be registered for it. Tailnet membership is not enough.</td></tr>
+          <tr><td>Host key verification failed</td><td>Compare the listener fingerprint with the trusted host key. Do not disable checking.</td></tr>
+          <tr><td><code>project instance limit reached</code></td><td>The limit counts every instance in the project, while <code>ls</code> shows only containers you own. Check the project through operator Incus access before deleting anything.</td></tr>
+          <tr><td><code>CPU request exceeds administrator limit</code></td><td>Request at or below the configured ceiling, with <code>--cpu=N</code>.</td></tr>
+          <tr><td><code>disk quota is unavailable</code></td><td>The operator did not configure or verify disk quota support. Omit <code>--disk</code> or fix the backing storage.</td></tr>
+          <tr><td><code>invalid instance name</code></td><td>Use 1-63 lowercase letters, digits or hyphens, starting with a letter and ending with a letter or digit.</td></tr>
+          <tr><td><code>client mode requires OpenSSH on PATH</code></td><td>Install OpenSSH or use stock <code>ssh</code> directly.</td></tr>
+          <tr><td>Guest output is truncated</td><td>Older builds could lose output on a blocked stream. Use a current release; the session now aborts instead of reporting false success.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="development">Development</h2>
+    <p>
+      Package responsibilities: <code>internal/gateway</code> handles SSH authentication and sessions,
+      <code>internal/command</code> parses and dispatches the management grammar, <code>internal/incus</code> enforces
+      ownership and runs fixed CLI arguments, and <code>internal/app</code> loads configuration and starts the server.
+    </p>
+    <p>
+      Run <code>gofmt</code>, tests, the race detector and <code>go vet</code> before opening a pull request. Read
+      <a href="https://github.com/4nkitd/incus-for-devs/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> and
+      <a href="https://github.com/4nkitd/incus-for-devs/blob/main/SECURITY.md">SECURITY.md</a>. Security reports should
+      not be public issues.
+    </p>
+
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="left">
+      <strong>incus-for-devs</strong><br>
+      An independent project, not affiliated with Incus or exe.dev. MIT licensed.
+    </div>
+    <nav aria-label="Footer">
+      <a href="index.html">Overview</a>
+      <a href="https://github.com/4nkitd/incus-for-devs">Source</a>
+      <a href="https://github.com/4nkitd/incus-for-devs/issues">Issues</a>
+      <a href="https://github.com/4nkitd/incus-for-devs/blob/main/LICENSE">License</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll('.doc-nav a[href^="#"]'));
+    var sections = links.map(function (a) { return document.querySelector(a.getAttribute('href')); }).filter(Boolean);
+    if (!('IntersectionObserver' in window) || !sections.length) return;
+    var visible = new Map();
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) visible.set(entry.target.id, entry.boundingClientRect.top);
+        else visible.delete(entry.target.id);
+      });
+      var best = null, bestTop = Infinity;
+      visible.forEach(function (top, id) { if (Math.abs(top) < Math.abs(bestTop)) { bestTop = top; best = id; } });
+      if (!best) return;
+      links.forEach(function (a) {
+        var on = a.getAttribute('href') === '#' + best;
+        a.classList.toggle('active', on);
+        if (on) a.setAttribute('aria-current', 'true');
+        else a.removeAttribute('aria-current');
+      });
+    }, { rootMargin: '-10% 0px -70% 0px' });
+    sections.forEach(function (section) { observer.observe(section); });
+  })();
+</script>
+
+</body>
+</html>

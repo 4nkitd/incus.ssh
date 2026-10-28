@@ -1,0 +1,19 @@
+config:
+  boot.autostart: "false"
+  limits.cpu: "1"
+  limits.memory: 2GiB
+  limits.processes: "256"
+  security.idmap.isolated: "true"
+  security.nesting: "false"
+  security.privileged: "false"
+description: Fixed unprivileged development container
+devices:
+  eth0:
+    name: eth0
+    network: incusbr0
+    security.mac_filtering: "true"
+    type: nic
+  root:
+    path: /
+    pool: devpool
+    type: disk
