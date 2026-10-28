@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Documentation · incus-for-devs</title>
-<meta name="description" content="Installation, configuration, commands and security model for incus-for-devs.">
+<title>Documentation · incus.ssh</title>
+<meta name="description" content="Installation, configuration, commands and security model for incus.ssh.">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,12 +13,12 @@
   <div class="wrap">
     <a class="brand" href="index.html">
       <span class="glyph" aria-hidden="true"></span>
-      incus-for-devs
+      incus.ssh
     </a>
     <nav aria-label="Primary">
       <a href="index.html">Overview</a>
-      <a class="hide-sm" href="https://github.com/4nkitd/incus-for-devs">GitHub</a>
-      <a class="primary" href="https://github.com/4nkitd/incus-for-devs">View source</a>
+      <a class="hide-sm" href="https://github.com/4nkitd/incus.ssh">GitHub</a>
+      <a class="primary" href="https://github.com/4nkitd/incus.ssh">View source</a>
     </nav>
   </div>
 </header>
@@ -42,9 +42,9 @@
     <a href="#troubleshooting">Troubleshooting</a>
     <a href="#development">Development</a>
     <p class="sub">Project</p>
-    <a href="https://github.com/4nkitd/incus-for-devs">Source</a>
-    <a href="https://github.com/4nkitd/incus-for-devs/issues">Issues</a>
-    <a href="https://github.com/4nkitd/incus-for-devs/blob/main/LICENSE">MIT license</a>
+    <a href="https://github.com/4nkitd/incus.ssh">Source</a>
+    <a href="https://github.com/4nkitd/incus.ssh/issues">Issues</a>
+    <a href="https://github.com/4nkitd/incus.ssh/blob/main/LICENSE">MIT license</a>
   </aside>
 
   <main class="doc-body">
@@ -57,7 +57,7 @@
 
     <h2 id="overview">Overview</h2>
     <p>
-      <code>incus-for-devs</code> is one Go executable with two modes. Server mode runs a private SSH listener beside
+      <code>incus.ssh</code> is one Go executable with two modes. Server mode runs a private SSH listener beside
       Incus. Client mode invokes your installed OpenSSH with strict checking and no forwarding. Plain
       <code>ssh</code> works without the client.
     </p>
@@ -90,7 +90,7 @@
 
     <h2 id="build">Build and test</h2>
     <p>Build and test on an approved Linux development host, not on the target host.</p>
-<pre class="block">git clone https://github.com/4nkitd/incus-for-devs.git
+<pre class="block">git clone https://github.com/4nkitd/incus.ssh.git
 cd incus-for-devs
 
 go mod verify
@@ -348,8 +348,8 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
     </p>
     <p>
       Run <code>gofmt</code>, tests, the race detector and <code>go vet</code> before opening a pull request. Read
-      <a href="https://github.com/4nkitd/incus-for-devs/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> and
-      <a href="https://github.com/4nkitd/incus-for-devs/blob/main/SECURITY.md">SECURITY.md</a>. Security reports should
+      <a href="https://github.com/4nkitd/incus.ssh/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> and
+      <a href="https://github.com/4nkitd/incus.ssh/blob/main/SECURITY.md">SECURITY.md</a>. Security reports should
       not be public issues.
     </p>
 
@@ -359,14 +359,14 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
 <footer>
   <div class="wrap">
     <div class="left">
-      <strong>incus-for-devs</strong><br>
+      <strong>incus.ssh</strong><br>
       An independent project, not affiliated with Incus or exe.dev. MIT licensed.
     </div>
     <nav aria-label="Footer">
       <a href="index.html">Overview</a>
-      <a href="https://github.com/4nkitd/incus-for-devs">Source</a>
-      <a href="https://github.com/4nkitd/incus-for-devs/issues">Issues</a>
-      <a href="https://github.com/4nkitd/incus-for-devs/blob/main/LICENSE">License</a>
+      <a href="https://github.com/4nkitd/incus.ssh">Source</a>
+      <a href="https://github.com/4nkitd/incus.ssh/issues">Issues</a>
+      <a href="https://github.com/4nkitd/incus.ssh/blob/main/LICENSE">License</a>
     </nav>
   </div>
 </footer>

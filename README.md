@@ -1,8 +1,10 @@
-# incus-for-devs
+# incus.ssh
 
 SSH into a development container without opening the host. A small Go gateway authenticates a public key, maps it to an app user and a restricted Incus project, then exposes a narrow management interface and a guest shell.
 
-Website and docs: **https://4nkitd.github.io/incus-for-devs/**
+The project is **incus.ssh**; the current CLI binary and service are named `incus-for-devs`.
+
+Website and docs: **https://4nkitd.github.io/incus.ssh/**
 
 ```sh
 ssh -p 2222 you@GATEWAY help
@@ -32,7 +34,7 @@ V1 also has no SFTP/SCP/rsync endpoint, web previews, sharing, direct per-contai
 
 ## Install
 
-There is no one-command installer. The operator prepares Incus, a restricted project, a fixed profile, an image, guest network policy and a private SSH listener. See the [documentation](https://4nkitd.github.io/incus-for-devs/docs.html) for the full procedure.
+There is no one-command installer. The operator prepares Incus, a restricted project, a fixed profile, an image, guest network policy and a private SSH listener. See the [documentation](https://4nkitd.github.io/incus.ssh/docs.html) for the full procedure.
 
 Short version, run on an approved Linux host:
 
