@@ -157,7 +157,7 @@ incus --project ifd-dev profile show ifd</pre>
 sudo ./bin/incus-for-devs setup --templates deploy --apply \
   --project ifd-dev --profile ifd \
   --pool devpool --network incusbr0</pre>
-    <p>Run setup from the repository checkout after the build, or use <code>incus-for-devs</code> once installed in <code>/usr/local/bin</code>.</p>
+    <p>Run setup from an extracted Linux archive containing <code>bin/incus-for-devs</code> and <code>deploy/</code>, or from a source checkout after building. An installed binary still needs <code>--templates</code> pointing at the deployment templates.</p>
     <div class="tablewrap" tabindex="0" role="region" aria-label="Setup flags">
       <table>
         <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th></tr></thead>
