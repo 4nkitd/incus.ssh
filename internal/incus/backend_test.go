@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unicode"
 
 	"github.com/creack/pty"
 
@@ -41,6 +42,23 @@ type scenario struct {
 	WaitForExecRelease bool
 }
 
+type fakeImageAlias struct {
+	Name string `json:"name"`
+}
+
+// fakeImage mirrors the fields of the Incus image list JSON that the backend is
+// allowed to read. Config and Env are fixture-only bait proving they are never
+// projected.
+type fakeImage struct {
+	Fingerprint  string            `json:"fingerprint"`
+	Type         string            `json:"type"`
+	Architecture string            `json:"architecture"`
+	Aliases      []fakeImageAlias  `json:"aliases"`
+	Properties   map[string]string `json:"properties"`
+	Config       map[string]string `json:"config,omitempty"`
+	Env          []string          `json:"env,omitempty"`
+}
+
 type fixture struct {
 	dir     string
 	config  Config
@@ -48,6 +66,11 @@ type fixture struct {
 }
 
 func newFixture(t *testing.T, items []instance, behavior scenario) *fixture {
+	t.Helper()
+	return newImageFixture(t, items, nil, behavior)
+}
+
+func newImageFixture(t *testing.T, items []instance, images []fakeImage, behavior scenario) *fixture {
 	t.Helper()
 	dir := t.TempDir()
 	testBinary, err := os.Executable()
@@ -61,6 +84,7 @@ func newFixture(t *testing.T, items []instance, behavior scenario) *fixture {
 		t.Fatal(err)
 	}
 	writeJSON(t, filepath.Join(dir, "instances.json"), items)
+	writeJSON(t, filepath.Join(dir, "images.json"), images)
 	writeJSON(t, filepath.Join(dir, "scenario.json"), behavior)
 	config := Config{Binary: binary, Image: "images:debian/12", Profile: "development", Limits: core.Limits{MaxInstances: 3, CPU: 2, Memory: "2GiB", Processes: 512}, OperationTimeout: 5 * time.Second, AvailableMemory: func() (uint64, error) { return 16 << 30, nil }}
 	backend, err := New(config)
@@ -175,7 +199,7 @@ func TestIncusHelper(t *testing.T) {
 		_, _ = os.Stderr.Write(behavior.Stderr)
 		os.Exit(behavior.Exit)
 	}
-	if behavior.LargeOutput > 0 && action == "list" {
+	if behavior.LargeOutput > 0 && (action == "list" || action == "image") {
 		_, _ = io.WriteString(os.Stdout, strings.Repeat("x", behavior.LargeOutput))
 		os.Exit(0)
 	}
@@ -185,6 +209,17 @@ func TestIncusHelper(t *testing.T) {
 	switch action {
 	case "list":
 		_ = json.NewEncoder(os.Stdout).Encode(items)
+	case "image":
+		if !reflect.DeepEqual(args[5:], []string{"list", "local:", "--format=json"}) {
+			os.Exit(97)
+		}
+		var images []fakeImage
+		data, _ = os.ReadFile(filepath.Join(dir, "images.json"))
+		_ = json.Unmarshal(data, &images)
+		if images == nil {
+			images = []fakeImage{}
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(images)
 	case "launch":
 		time.Sleep(behavior.LaunchDelay)
 		item := ownedInstance(args[6], alice.Name)
@@ -1079,6 +1114,448 @@ func TestSizeParsing(t *testing.T) {
 	for _, input := range []string{"", "-1GiB", "0GB", "2", "2GiB\n", "1.5GB", "9223372036854775808B", "9999999999999999999999999999GB"} {
 		if _, err := parseSize(input); err == nil {
 			t.Errorf("accepted size %q", input)
+		}
+	}
+}
+
+var (
+	ubuntuImageFP     = strings.Repeat("a", 64)
+	debianImageFP     = strings.Repeat("B", 64)
+	vmImageFP         = strings.Repeat("c", 64)
+	firstDuplicateFP  = strings.Repeat("d", 64)
+	secondDuplicateFP = strings.Repeat("e", 64)
+	noAliasImageFP    = strings.Repeat("f", 64)
+)
+
+// cachedImageCatalog resembles incus image list local: --format=json. VM
+// images, duplicate aliases, an alias-less image and a fingerprint in mixed
+// case are all represented.
+func cachedImageCatalog() []fakeImage {
+	return []fakeImage{
+		{
+			Fingerprint: ubuntuImageFP, Type: "container", Architecture: "x86_64",
+			Aliases:    []fakeImageAlias{{Name: "ubuntu/24.04"}, {Name: "ubuntu"}, {Name: "ubuntu"}, {Name: "../escape"}},
+			Properties: map[string]string{"description": "Ubuntu 24.04 LTS", "os": "ubuntu", "release": "noble"},
+			Config:     map[string]string{"security.nesting": "true", "environment.SECRET": "leak-me"},
+			Env:        []string{"SECRET=leak-me"},
+		},
+		{
+			Fingerprint: debianImageFP, Type: "container", Architecture: "aarch64",
+			Aliases:    []fakeImageAlias{{Name: "Debian"}},
+			Properties: map[string]string{"os": "debian", "release": "trixie"},
+		},
+		{
+			Fingerprint: noAliasImageFP, Type: "container",
+			Properties: map[string]string{"os": "alpine", "release": "3.20"},
+		},
+		{
+			Fingerprint: "not-a-fingerprint", Type: "container",
+			Aliases: []fakeImageAlias{{Name: "broken"}},
+		},
+		{
+			Fingerprint: vmImageFP, Type: "virtual-machine", Architecture: "x86_64",
+			Aliases: []fakeImageAlias{{Name: "vm/only"}},
+		},
+		{
+			Fingerprint: firstDuplicateFP, Type: "container",
+			Aliases: []fakeImageAlias{{Name: "duplicate"}},
+		},
+		{
+			Fingerprint: secondDuplicateFP, Type: "container",
+			Aliases: []fakeImageAlias{{Name: "duplicate"}},
+		},
+	}
+}
+
+func imageInfoByFingerprint(t *testing.T, images []core.ImageInfo, fingerprint string) core.ImageInfo {
+	t.Helper()
+	for _, item := range images {
+		if item.Fingerprint == fingerprint {
+			return item
+		}
+	}
+	t.Fatalf("image %q missing from %#v", fingerprint, images)
+	return core.ImageInfo{}
+}
+
+func launchImageArgument(t *testing.T, f *fixture) string {
+	t.Helper()
+	for _, call := range f.calls(t) {
+		if len(call) > 5 && call[4] == "launch" {
+			return call[5]
+		}
+	}
+	t.Fatalf("no launch call: %v", f.calls(t))
+	return ""
+}
+
+func TestImagesCatalogProjection(t *testing.T) {
+	f := newImageFixture(t, nil, cachedImageCatalog(), scenario{})
+	fingerprinted := ownedInstance("fingerprinted", alice.Name)
+	fingerprinted.Config["volatile.base_image"] = strings.ToUpper(ubuntuImageFP)
+	writeJSON(t, filepath.Join(f.dir, "instances.json"), []instance{fingerprinted})
+
+	images, err := f.backend.Images(context.Background(), core.Principal{Name: "bob", Project: alice.Project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(images) != 5 {
+		t.Fatalf("projected %d images, want 5: %#v", len(images), images)
+	}
+	var order []string
+	for _, item := range images {
+		order = append(order, item.Fingerprint)
+		if item.Aliases == nil {
+			t.Fatalf("aliases for %q must be [] not null", item.Fingerprint)
+		}
+	}
+	wantOrder := []string{
+		strings.ToLower(ubuntuImageFP),
+		strings.ToLower(debianImageFP),
+		firstDuplicateFP,
+		secondDuplicateFP,
+		noAliasImageFP,
+	}
+	if !reflect.DeepEqual(order, wantOrder) {
+		t.Fatalf("image order = %q, want %q", order, wantOrder)
+	}
+	ubuntu := imageInfoByFingerprint(t, images, strings.ToLower(ubuntuImageFP))
+	if !reflect.DeepEqual(ubuntu.Aliases, []string{"ubuntu", "ubuntu/24.04"}) {
+		t.Fatalf("ubuntu aliases = %q", ubuntu.Aliases)
+	}
+	if ubuntu.Description != "Ubuntu 24.04 LTS" || ubuntu.OS != "ubuntu" || ubuntu.Release != "noble" || ubuntu.Architecture != "x86_64" {
+		t.Fatalf("ubuntu metadata = %#v", ubuntu)
+	}
+	debian := imageInfoByFingerprint(t, images, strings.ToLower(debianImageFP))
+	if !reflect.DeepEqual(debian.Aliases, []string{"Debian"}) || debian.Description != "" || debian.Architecture != "aarch64" {
+		t.Fatalf("debian metadata = %#v", debian)
+	}
+	if noAliases := imageInfoByFingerprint(t, images, noAliasImageFP); len(noAliases.Aliases) != 0 {
+		t.Fatalf("alias-less image = %#v", noAliases)
+	}
+	if _, ok := findImage(images, strings.ToLower(vmImageFP)); ok {
+		t.Fatal("virtual-machine image was listed")
+	}
+	encoded, err := json.Marshal(images)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"leak-me", "environment", "security.nesting", ownerKey, "bob"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("image projection leaked %q: %s", forbidden, encoded)
+		}
+	}
+	calls := f.calls(t)
+	if len(calls) != 1 {
+		t.Fatalf("Images made extra calls: %v", calls)
+	}
+	wantArgs := []string{"--force-local", "--project", alice.Project, "--quiet", "image", "list", "local:", "--format=json"}
+	if !reflect.DeepEqual(calls[0], wantArgs) {
+		t.Fatalf("image catalog args = %q, want %q", calls[0], wantArgs)
+	}
+}
+
+func TestSafeImageMetadata(t *testing.T) {
+	boundary := strings.Repeat("x", maxImageMetadataBytes)
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{"plain", "Ubuntu 24.04 LTS", "Ubuntu 24.04 LTS"},
+		{"empty", "", ""},
+		{"boundary", boundary, boundary},
+		{"escape", "red\x1b[31m", ""},
+		{"newline", "a\nb", ""},
+		{"tab", "a\tb", ""},
+		{"c1", "a\u0085b", ""},
+		{"del", "a\x7fb", ""},
+		{"nul", "a\x00b", ""},
+		{"overlong", strings.Repeat("x", maxImageMetadataBytes+1), ""},
+		{"invalid utf8", string([]byte{0xff, 0xfe}), ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := safeImageMetadata(test.value); got != test.want {
+				t.Fatalf("safeImageMetadata(%q) = %q, want %q", test.value, got, test.want)
+			}
+		})
+	}
+}
+
+func TestImagesDropsUnsafeMetadata(t *testing.T) {
+	longDescription := strings.Repeat("L", maxImageMetadataBytes+1)
+	boundaryDescription := strings.Repeat("B", maxImageMetadataBytes)
+	f := newImageFixture(t, nil, []fakeImage{
+		{
+			Fingerprint: strings.Repeat("1", 64), Type: "container", Architecture: "EVILTAB\tarch",
+			Aliases: []fakeImageAlias{{Name: "evil"}},
+			Properties: map[string]string{
+				"description": "EVILESC\x1b[2J",
+				"os":          "EVILNL\nos",
+				"release":     "EVILC1\u0085release",
+			},
+		},
+		{
+			Fingerprint: strings.Repeat("2", 64), Type: "container",
+			Aliases:    []fakeImageAlias{{Name: "long"}},
+			Properties: map[string]string{"description": longDescription},
+		},
+		{
+			Fingerprint: strings.Repeat("3", 64), Type: "container", Architecture: "x86_64",
+			Aliases:    []fakeImageAlias{{Name: "boundary"}},
+			Properties: map[string]string{"description": boundaryDescription, "os": "ubuntu", "release": "24.04"},
+		},
+	}, scenario{})
+	images, err := f.backend.Images(context.Background(), alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evil := imageInfoByFingerprint(t, images, strings.Repeat("1", 64))
+	if evil.Description != "" || evil.OS != "" || evil.Release != "" || evil.Architecture != "" {
+		t.Fatalf("unsafe metadata survived: %#v", evil)
+	}
+	overlong := imageInfoByFingerprint(t, images, strings.Repeat("2", 64))
+	if overlong.Description != "" {
+		t.Fatalf("overlong metadata survived: %d bytes", len(overlong.Description))
+	}
+	boundary := imageInfoByFingerprint(t, images, strings.Repeat("3", 64))
+	if boundary.Description != boundaryDescription || boundary.OS != "ubuntu" || boundary.Release != "24.04" || boundary.Architecture != "x86_64" {
+		t.Fatalf("safe metadata was dropped: %#v", boundary)
+	}
+	encoded, err := json.Marshal(images)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "EVIL") || strings.Contains(string(encoded), "LLLL") {
+		t.Fatalf("unsafe metadata reached JSON: %s", encoded)
+	}
+	for _, item := range images {
+		for _, value := range []string{item.Fingerprint, item.Description, item.OS, item.Release, item.Architecture} {
+			for _, r := range value {
+				if unicode.IsControl(r) {
+					t.Fatalf("control character %U reached projected metadata: %#v", r, item)
+				}
+			}
+		}
+	}
+}
+
+func findImage(images []core.ImageInfo, fingerprint string) (core.ImageInfo, bool) {
+	for _, item := range images {
+		if item.Fingerprint == fingerprint {
+			return item, true
+		}
+	}
+	return core.ImageInfo{}, false
+}
+
+func TestImagesRejectsInvalidPrincipalsWithoutCLI(t *testing.T) {
+	f := newImageFixture(t, nil, cachedImageCatalog(), scenario{})
+	for _, principal := range []core.Principal{
+		{Name: "alice", Project: "remote:project"},
+		{Name: "alice", Project: "--all-projects"},
+		{Name: "a\n", Project: "developers"},
+		{Name: "alice"},
+	} {
+		if _, err := f.backend.Images(context.Background(), principal); err == nil {
+			t.Errorf("Images accepted %#v", principal)
+		}
+	}
+	if calls := f.calls(t); len(calls) != 0 {
+		t.Fatalf("invalid principals reached CLI: %v", calls)
+	}
+}
+
+func TestCreatePinsRequestedImageToCachedFingerprint(t *testing.T) {
+	tests := []struct {
+		reference string
+		want      string
+	}{
+		{"ubuntu/24.04", ubuntuImageFP},
+		{"ubuntu", ubuntuImageFP},
+		{"local:ubuntu/24.04", ubuntuImageFP},
+		{"Debian", strings.ToLower(debianImageFP)},
+		{"local:Debian", strings.ToLower(debianImageFP)},
+		{strings.ToLower(debianImageFP), strings.ToLower(debianImageFP)},
+		{strings.ToUpper(debianImageFP), strings.ToLower(debianImageFP)},
+		{"local:" + strings.ToUpper(debianImageFP), strings.ToLower(debianImageFP)},
+		{strings.ToUpper(ubuntuImageFP), ubuntuImageFP},
+	}
+	for _, test := range tests {
+		t.Run(test.reference, func(t *testing.T) {
+			f := newImageFixture(t, nil, cachedImageCatalog(), scenario{})
+			created, err := f.backend.Create(context.Background(), alice, core.CreateOptions{Name: "pinned", Image: test.reference})
+			if err != nil {
+				t.Fatalf("create: %v", err)
+			}
+			if created.Image != test.want {
+				t.Fatalf("returned image = %q, want %q", created.Image, test.want)
+			}
+			if got := launchImageArgument(t, f); got != test.want {
+				t.Fatalf("launch image = %q, want %q", got, test.want)
+			}
+			calls := f.calls(t)
+			imageCalls := 0
+			for _, call := range calls {
+				if call[4] == "image" {
+					imageCalls++
+					if !reflect.DeepEqual(call[4:], []string{"image", "list", "local:", "--format=json"}) {
+						t.Fatalf("image query = %q", call)
+					}
+				}
+				for _, arg := range call {
+					if arg == test.reference && test.reference != test.want {
+						t.Fatalf("requested reference reached CLI: %q", call)
+					}
+				}
+			}
+			if imageCalls != 1 {
+				t.Fatalf("catalog queries = %d, calls = %v", imageCalls, calls)
+			}
+			if len(calls) != 3 || calls[0][4] != "list" || calls[1][4] != "image" || calls[2][4] != "launch" {
+				t.Fatalf("unexpected call order: %v", calls)
+			}
+		})
+	}
+}
+
+func TestCreateRejectsInvalidImageInputWithoutCLI(t *testing.T) {
+	f := newImageFixture(t, nil, cachedImageCatalog(), scenario{})
+	references := []string{
+		"-ubuntu", "--profile=default", "--config=security.privileged=true", "local:-x",
+		"http://example.com/image", "https://example.com/image", "images:debian/12", "remote:ubuntu",
+		"local:", "local:local:ubuntu", "a/../b", "../image", "..", ".", "/etc/passwd", "a//b",
+		"a/", "a b", "a\tb", "a\x00b", "a\nb", "a;id", "$(id)", "a\\b",
+		strings.Repeat("a", maxImageRefBytes+1),
+	}
+	for _, reference := range references {
+		if _, err := f.backend.Create(context.Background(), alice, core.CreateOptions{Name: "bad", Image: reference}); err == nil {
+			t.Errorf("Create accepted image %q", reference)
+		}
+	}
+	if calls := f.calls(t); len(calls) != 0 {
+		t.Fatalf("invalid image input reached CLI: %v", calls)
+	}
+}
+
+func TestCreateImageResolutionFailuresDoNotLaunch(t *testing.T) {
+	tests := []struct {
+		reference string
+		want      string
+	}{
+		{"not-cached", "not cached"},
+		{"broken", "not cached"},
+		{"vm/only", "not a container image"},
+		{"duplicate", "matches multiple cached images"},
+	}
+	for _, test := range tests {
+		t.Run(test.reference, func(t *testing.T) {
+			f := newImageFixture(t, nil, cachedImageCatalog(), scenario{})
+			_, err := f.backend.Create(context.Background(), alice, core.CreateOptions{Name: "target", Image: test.reference})
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %q", err, test.want)
+			}
+			for _, call := range f.calls(t) {
+				if call[4] == "launch" {
+					t.Fatalf("failed resolution launched: %v", call)
+				}
+			}
+		})
+	}
+}
+
+func TestCreateImageCatalogFailureDoesNotLaunch(t *testing.T) {
+	f := newImageFixture(t, nil, cachedImageCatalog(), scenario{Failure: "image", Exit: 1, Stderr: []byte(strings.Repeat("secret\x1b[31m", 10000))})
+	before, err := os.ReadFile(filepath.Join(f.dir, "instances.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.backend.Create(context.Background(), alice, core.CreateOptions{Name: "target", Image: "ubuntu/24.04"})
+	if err == nil || strings.Contains(err.Error(), "secret") || len(err.Error()) > 100 {
+		t.Fatalf("catalog failure error = %v", err)
+	}
+	for _, call := range f.calls(t) {
+		if call[4] == "launch" {
+			t.Fatalf("failed catalog launched: %v", call)
+		}
+	}
+	after, err := os.ReadFile(filepath.Join(f.dir, "instances.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("failed resolution mutated project instances")
+	}
+}
+
+func TestDefaultAdministratorImageNeverQueriesCatalog(t *testing.T) {
+	f := newImageFixture(t, nil, cachedImageCatalog(), scenario{Failure: "image", Exit: 1})
+	created, err := f.backend.Create(context.Background(), alice, core.CreateOptions{Name: "legacy"})
+	if err != nil {
+		t.Fatalf("default create depended on the image catalog: %v", err)
+	}
+	if created.Image != "" {
+		t.Fatalf("default create claimed image %q", created.Image)
+	}
+	for _, call := range f.calls(t) {
+		if call[4] == "image" {
+			t.Fatalf("default create queried the catalog: %v", call)
+		}
+	}
+	if got := launchImageArgument(t, f); got != "images:debian/12" {
+		t.Fatalf("legacy administrator image = %q", got)
+	}
+}
+
+func TestImagesTimeoutAndBoundedOutput(t *testing.T) {
+	t.Run("timeout", func(t *testing.T) {
+		f := newImageFixture(t, nil, cachedImageCatalog(), scenario{Block: "image"})
+		f.backend.config.OperationTimeout = 150 * time.Millisecond
+		start := time.Now()
+		if _, err := f.backend.Images(context.Background(), alice); !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 3*time.Second {
+			t.Fatalf("timeout = %v after %v", err, time.Since(start))
+		}
+	})
+	t.Run("secret stderr", func(t *testing.T) {
+		f := newImageFixture(t, nil, cachedImageCatalog(), scenario{Failure: "image", Exit: 1, Stderr: []byte(strings.Repeat("secret\x1b[31m", 10000))})
+		_, err := f.backend.Images(context.Background(), alice)
+		if err == nil || strings.Contains(err.Error(), "secret") || len(err.Error()) > 100 {
+			t.Fatalf("unsafe error = %v", err)
+		}
+	})
+	t.Run("large metadata", func(t *testing.T) {
+		f := newImageFixture(t, nil, cachedImageCatalog(), scenario{LargeOutput: 5 << 20})
+		if _, err := f.backend.Images(context.Background(), alice); err == nil || !strings.Contains(err.Error(), "output limit") {
+			t.Fatalf("oversized output = %v", err)
+		}
+	})
+}
+
+func TestListReportsOnlyVolatileBaseImageFingerprint(t *testing.T) {
+	fingerprinted := ownedInstance("fingerprinted", alice.Name)
+	fingerprinted.Config["volatile.base_image"] = strings.ToUpper(ubuntuImageFP)
+	aliased := ownedInstance("aliased", alice.Name)
+	aliased.Config["volatile.base_image"] = "ubuntu/24.04"
+	invalid := ownedInstance("invalid", alice.Name)
+	invalid.Config["volatile.base_image"] = "  " + ubuntuImageFP
+	f := newFixture(t, []instance{fingerprinted, aliased, invalid}, scenario{})
+	items, err := f.backend.List(context.Background(), alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"fingerprinted": ubuntuImageFP, "aliased": "", "invalid": ""}
+	if len(items) != len(want) {
+		t.Fatalf("list = %#v", items)
+	}
+	for _, item := range items {
+		if item.Image != want[item.Name] {
+			t.Fatalf("%s image = %q, want %q", item.Name, item.Image, want[item.Name])
+		}
+	}
+	for _, call := range f.calls(t) {
+		if call[4] != "list" {
+			t.Fatalf("list queried beyond instance metadata: %v", call)
 		}
 	}
 }

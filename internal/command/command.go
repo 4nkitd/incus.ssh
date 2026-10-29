@@ -37,6 +37,12 @@ var namePattern = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`)
 var sizePattern = regexp.MustCompile(`^([0-9]+)(B|kB|KB|MB|GB|TB|KiB|MiB|GiB|TiB)$`)
 var filterPattern = regexp.MustCompile(`^[a-zA-Z0-9*?\[\]!^-]+$`)
 
+// An image reference is a cached alias or fingerprint. Only the local: remote
+// prefix is accepted, and path segments may not traverse.
+var imageRefPattern = regexp.MustCompile(`^(?:local:)?[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+
+const maxImageRefBytes = 256
+
 type request struct {
 	command string
 	json    bool
@@ -53,10 +59,11 @@ type instanceSummary struct {
 	Memory    string `json:"memory,omitempty"`
 	Processes string `json:"processes,omitempty"`
 	Disk      string `json:"disk,omitempty"`
+	Image     string `json:"image,omitempty"`
 }
 
 func summary(vm core.Instance) instanceSummary {
-	return instanceSummary{Name: vm.Name, Status: vm.Status, CPU: vm.CPU, Memory: vm.Memory, Processes: vm.Processes, Disk: vm.Disk}
+	return instanceSummary{Name: vm.Name, Status: vm.Status, CPU: vm.CPU, Memory: vm.Memory, Processes: vm.Processes, Disk: vm.Disk, Image: vm.Image}
 }
 
 func (h Handler) Handle(ctx context.Context, p core.Principal, line string, s core.Streams) int {
@@ -131,6 +138,8 @@ func (h Handler) Handle(ctx context.Context, p core.Principal, line string, s co
 		return 0
 	case "rm":
 		return h.remove(ctx, p, r, s)
+	case "image":
+		return h.imageList(ctx, p, r, s)
 	case "resume":
 		return h.lifecycle(ctx, p, r, s, "resumed", h.Backend.Resume)
 	case "start":
@@ -147,6 +156,65 @@ func (h Handler) Handle(ctx context.Context, p core.Principal, line string, s co
 		return status
 	}
 	return failure(s, r.json, errors.New("unsupported command"))
+}
+
+// imageList is read-only: image cache mutations stay administrator work on the
+// host, so no image name or remote option is ever forwarded to Incus.
+func (h Handler) imageList(ctx context.Context, p core.Principal, r request, s core.Streams) int {
+	infos, err := h.Backend.Images(ctx, p)
+	if err != nil {
+		return failure(s, r.json, err)
+	}
+	items := make([]core.ImageInfo, 0, len(infos))
+	for _, info := range infos {
+		if info.Aliases == nil {
+			info.Aliases = []string{}
+		}
+		items = append(items, info)
+	}
+	if r.json {
+		return writeJSON(s, struct {
+			Images []core.ImageInfo `json:"images"`
+		}{items})
+	}
+	for _, info := range items {
+		plainName := imageName(info)
+		name := terminal.Style(s, terminal.Cyan, plainName)
+		fields := []string{name, shortFingerprint(info.Fingerprint)}
+		if osRelease := imageOSRelease(info); osRelease != "" {
+			fields = append(fields, osRelease)
+		}
+		if status := writeText(s, "%s\n", strings.Join(fields, "\t")); status != 0 {
+			return status
+		}
+	}
+	return 0
+}
+
+func imageName(info core.ImageInfo) string {
+	for _, alias := range info.Aliases {
+		if alias != "" {
+			return alias
+		}
+	}
+	return shortFingerprint(info.Fingerprint)
+}
+
+func shortFingerprint(fingerprint string) string {
+	if len(fingerprint) > 12 {
+		return fingerprint[:12]
+	}
+	return fingerprint
+}
+
+func imageOSRelease(info core.ImageInfo) string {
+	parts := make([]string, 0, 2)
+	for _, part := range []string{info.OS, info.Release} {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 func (h Handler) remove(ctx context.Context, p core.Principal, r request, s core.Streams) int {
@@ -307,6 +375,11 @@ func parse(line string) (request, error) {
 				} else {
 					r.create.Disk = value
 				}
+			case "--image":
+				if err := validImageRef(value); err != nil {
+					return r, fmt.Errorf("--image: %w", err)
+				}
+				r.create.Image = value
 			default:
 				return r, fmt.Errorf("unknown flag %s for %s", flag, word)
 			}
@@ -357,6 +430,20 @@ func parse(line string) (request, error) {
 				return r, fmt.Errorf("duplicate instance name %q", name)
 			}
 			names[name] = true
+		}
+	case "image":
+		if len(r.args) == 0 {
+			return r, errors.New("usage: image list [--json]")
+		}
+		switch r.args[0] {
+		case "list":
+			if len(r.args) != 1 {
+				return r, errors.New("usage: image list [--json]")
+			}
+		case "add", "remove", "rm", "delete", "import", "export", "copy", "pull", "push", "refresh", "alias", "set", "unset", "edit":
+			return r, fmt.Errorf("image %s is unsupported: only image list is available", r.args[0])
+		default:
+			return r, fmt.Errorf("unknown image subcommand %q; use image list", r.args[0])
 		}
 	}
 	return r, nil
@@ -420,9 +507,43 @@ func validSize(value string) error {
 	return nil
 }
 
+// validImageRef accepts a cached alias or fingerprint without resolving it.
+// The backend owns authoritative lookup, so this only rejects input that can
+// never be a cache reference: control bytes, URLs, unsupported remote prefixes
+// and path traversal.
+func validImageRef(value string) error {
+	if value == "" {
+		return errors.New("image reference must not be empty")
+	}
+	if len(value) > maxImageRefBytes {
+		return fmt.Errorf("image reference exceeds %d bytes", maxImageRefBytes)
+	}
+	for _, ch := range value {
+		if ch > unicode.MaxASCII {
+			return errors.New("image reference must be ASCII")
+		}
+		if unicode.IsControl(ch) {
+			return errors.New("image reference must not contain control characters")
+		}
+	}
+	if strings.Contains(value, "://") {
+		return errors.New("image reference must be a cached alias or fingerprint, not a URL")
+	}
+	if !imageRefPattern.MatchString(value) {
+		return errors.New("invalid image reference; use an alias or fingerprint from image list, optionally prefixed with local:")
+	}
+	ref := strings.TrimPrefix(value, "local:")
+	for _, segment := range strings.Split(ref, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return errors.New("image reference must not contain empty, . or .. path segments")
+		}
+	}
+	return nil
+}
+
 func unsupported(command string) error {
 	switch command {
-	case "help", "?", "whoami", "new", "ls", "clear", "rm", "resume", "start", "stop", "restart", "ssh":
+	case "help", "?", "whoami", "new", "ls", "image", "clear", "rm", "resume", "start", "stop", "restart", "ssh":
 		return nil
 	case "pause":
 		return errors.New("pause is unsupported: Incus containers cannot promise exe.dev RAM-to-disk suspend; stop and freeze are not substitutes")

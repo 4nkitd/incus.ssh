@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -21,6 +22,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"incus-for-devs/internal/install"
 )
 
 const (
@@ -41,11 +44,11 @@ type options struct {
 	apply     bool
 }
 
-// Run prepares or checks the Incus-side resources. It never installs the
-// service, writes SSH configuration, creates storage or networks, or downloads
-// an image.
+// Run prepares Incus resources, or explicitly invokes dependency installation.
+// It never installs the gateway service or creates storage, networks or images.
 func Run(args []string) error {
 	opts := options{}
+	var installIncus bool
 	flags := flag.NewFlagSet("setup", flag.ContinueOnError)
 	flags.StringVar(&opts.config, "config", "", "gateway JSON config to read the image reference from")
 	flags.StringVar(&opts.templates, "templates", "deploy", "directory containing project.yaml and profile.yaml")
@@ -56,6 +59,7 @@ func Run(args []string) error {
 	flags.StringVar(&opts.image, "image", defaultImage, "cached local image alias or fingerprint")
 	flags.StringVar(&opts.binary, "incus", "/usr/bin/incus", "Incus CLI path")
 	flags.BoolVar(&opts.apply, "apply", false, "create missing resources; requires root and never edits existing ones")
+	flags.BoolVar(&installIncus, "install-incus", false, "plan Incus package installation only; add --apply to install")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return nil
@@ -64,6 +68,20 @@ func Run(args []string) error {
 	}
 	if flags.NArg() != 0 {
 		return errors.New("usage: incus-for-devs setup [--templates DIR] [--pool NAME] [--network NAME] [--image REF] [--config FILE] [--apply]")
+	}
+	if installIncus {
+		var incompatible string
+		flags.Visit(func(f *flag.Flag) {
+			if f.Name != "install-incus" && f.Name != "apply" {
+				incompatible = f.Name
+			}
+		})
+		if incompatible != "" {
+			return fmt.Errorf("--install-incus cannot be combined with preparation flag --%s; install dependencies separately", incompatible)
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		return install.Run(ctx, install.Options{Apply: opts.apply}, os.Stdout, os.Stderr)
 	}
 	return run(context.Background(), opts, os.Stdout, os.Stderr)
 }

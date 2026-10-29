@@ -33,6 +33,8 @@
     <a href="#requirements">Requirements</a>
     <a href="#build">Build and test</a>
     <a href="#install">Prepare Incus</a>
+    <a href="#images">Images</a>
+    <a href="#operator">Operator mode</a>
     <a href="#configure">Configure</a>
     <a href="#service">Run as a service</a>
     <a href="#verify">First login</a>
@@ -56,12 +58,13 @@
       host-access tool. Commands below use <code>GATEWAY</code>, <code>you</code>, <code>ifd-dev</code> and
       <code>devpool</code> as placeholders.
     </p>
-    <p class="doc-meta">Phase 1. v0.2.0. Incus 6.0 on Ubuntu 24.04. Go 1.26+.</p>
+    <p class="doc-meta">v0.3.0. Incus 6.0.0 on Ubuntu 24.04. Go 1.26+.</p>
 
     <div class="callout">
-      <strong>Version 0.2.0.</strong> Download the Linux amd64 or macOS arm64 archive and its checksums from
-      <a href="https://github.com/4nkitd/incus.ssh/releases/tag/v0.2.0">GitHub Releases</a>, or build from source.
-      The CLI binary and systemd service are named <code>incus-for-devs</code>.
+      <strong>Version 0.3.0.</strong> Source and release notes are on
+      <a href="https://github.com/4nkitd/incus.ssh/releases/tag/v0.3.0">GitHub</a>; build from source with Go 1.26+.
+      Linux amd64 and macOS arm64 cross-builds were verified. The CLI binary and systemd service are named
+      <code>incus-for-devs</code>.
     </div>
 
     <h2 id="overview">Overview</h2>
@@ -76,16 +79,21 @@
       through <code>/bin/sh -lc</code> inside a container the user owns. No host shell is involved.
     </p>
     <p>
-      Phase 1 supports create, list, shell, start, stop, restart and remove. <code>resume</code> is an alias of
+      The gateway supports create, list, shell, start, stop, restart and remove. <code>resume</code> is an alias of
       <code>start</code>. New containers default to 1 CPU, 2GiB memory and 256 processes; the operator's values are
       per-container maxima. Names are fruit-based unless you pass <code>--name=</code>.
+    </p>
+    <p>
+      The v0.3.0 release adds a read-only catalog of predefined native images cached by the operator and
+      <code>new --image=REF</code> to choose among them. The configured image remains the default, and the client still
+      cannot pull or copy an image.
     </p>
 
     <h2 id="requirements">Requirements</h2>
     <ul>
       <li>Linux host with Incus installed and initialised</li>
       <li>A storage pool and a managed bridge network matching the templates, or edited templates (OVN is not supported)</li>
-      <li>An approved image cached locally in Incus</li>
+      <li>A predefined, approved native Incus Linux image cached locally, plus any additional images the operator caches for image selection</li>
       <li>Root access for installation and project preparation</li>
       <li>Go 1.26 or newer to build</li>
       <li>OpenSSH on client machines; the compiled client is optional</li>
@@ -147,36 +155,38 @@ incus --project ifd-dev profile show ifd</pre>
       it as a low-level option and rejects the launch. The profile intentionally omits it.
     </p>
 
-    <h3>The setup command</h3>
+    <h3>Prepare the existing runtime (default mode)</h3>
     <p>
-      After building on Linux, <code>setup</code> performs the same project and profile preparation with checks. Its
-      default is a plan: it checks the daemon, pool, bridge and cached image, and changes nothing. <code>--apply</code>
-      is explicit, requires root, and is the only mode that creates resources.
+      After building on Linux, <code>setup</code> performs project and profile preparation against an existing daemon.
+      This default mode starts as a plan: it checks the daemon, pool, bridge and cached image, and changes nothing.
+      <code>--apply</code> is explicit, requires root, and is the only default-mode run that creates project and profile
+      resources.
     </p>
 <pre class="block" tabindex="0">./bin/incus-for-devs setup --templates deploy
 sudo ./bin/incus-for-devs setup --templates deploy --apply \
   --project ifd-dev --profile ifd \
   --pool devpool --network incusbr0</pre>
-    <p>Run setup from an extracted Linux archive containing <code>bin/incus-for-devs</code> and <code>deploy/</code>, or from a source checkout after building. An installed binary still needs <code>--templates</code> pointing at the deployment templates.</p>
+    <p>Run setup from an extracted Linux archive containing <code>bin/incus-for-devs</code> and <code>deploy/</code>, keeping the standard release layout, or from a source checkout after building. An installed binary still needs <code>--templates</code> pointing at the deployment templates.</p>
     <div class="tablewrap" tabindex="0" role="region" aria-label="Setup flags">
       <table>
         <thead><tr><th scope="col">Flag</th><th scope="col">Meaning</th></tr></thead>
         <tbody>
           <tr><th scope="row"><code>--templates DIR</code></th><td>Directory with <code>project.yaml</code> and <code>profile.yaml</code>. Defaults to <code>deploy</code>; any other value must be an absolute path.</td></tr>
-          <tr><th scope="row"><code>--apply</code></th><td>Create missing project and profile resources. Without it, setup only prints a plan. Requires root.</td></tr>
+          <tr><th scope="row"><code>--apply</code></th><td>Mode-dependent. In the default runtime mode, create missing project and profile resources; without it, setup only prints a plan. With <code>--install-incus</code>, update APT lists, run a bounded simulation, then install or upgrade the fixed dependencies under <code>--no-remove</code>. Both uses require root.</td></tr>
           <tr><th scope="row"><code>--project</code>, <code>--profile</code></th><td>Names to prepare. Defaults are <code>ifd-dev</code> and <code>ifd</code>. Each is a lowercase slug of at most 48 characters; <code>default</code> is rejected.</td></tr>
           <tr><th scope="row"><code>--pool</code>, <code>--network</code></th><td>Existing storage pool and managed bridge the templates must reference exactly. Defaults are <code>devpool</code> and <code>incusbr0</code>. Only bridge networks are accepted; OVN is rejected.</td></tr>
           <tr><th scope="row"><code>--image</code></th><td>A cached local alias, an alias with a <code>local:</code> prefix, or a 64-character fingerprint. Defaults to <code>ifd-ubuntu-24-04</code>. Remote references such as <code>images:ubuntu/24.04</code> are rejected.</td></tr>
           <tr><th scope="row"><code>--config FILE</code></th><td>Read only the <code>image</code> field from a gateway JSON config. It overrides <code>--image</code>.</td></tr>
           <tr><th scope="row"><code>--incus</code></th><td>Absolute path to the Incus CLI. Defaults to <code>/usr/bin/incus</code>. Root runs require a trusted, root-owned executable and directories that are not writable by group or others.</td></tr>
+          <tr><th scope="row"><code>--install-incus</code></th><td>Separate dependency-only stage for a fresh host. It installs a fixed four-package set and does not initialise Incus or prepare the runtime. See <a href="#install-incus">Install the Incus dependency</a>.</td></tr>
         </tbody>
       </table>
     </div>
     <p>
-      The plan verifies that the Incus daemon is reachable and trusted, the pool and network exist, the network is a
-      managed bridge, and the image alias or fingerprint resolves to a cached container image. It does not parse the
-      templates, so template problems are reported only at apply. The account running setup needs access to the local
-      Incus socket; apply requires root.
+      The default setup plan verifies that the Incus daemon is reachable and trusted, the pool and network exist, the
+      network is a managed bridge, and the image alias or fingerprint resolves to a cached container image. It does not
+      parse the templates, so template problems are reported only at apply. The account running setup needs access to the
+      local Incus socket; apply requires root.
     </p>
     <p>
       Apply validates the templates as strict typed YAML: only known top-level keys are accepted, duplicate keys,
@@ -190,12 +200,136 @@ sudo ./bin/incus-for-devs setup --templates deploy --apply \
       Existing project and profile resources that match exactly are left unchanged. Any mismatch fails with a
       difference report and is never overwritten or deleted. Apply creates only missing resources; if a later create
       fails after an earlier one succeeded, setup reports the partial state and asks you to re-run to reconcile. It
-      verifies the result after creating. It never installs packages, writes systemd or SSH configuration, creates
-      pools or networks, downloads images, or changes anything outside the configured project and profile.
+      verifies the result after creating. This runtime mode never installs packages, writes systemd or SSH
+      configuration, creates pools or networks, downloads images, or changes anything outside the configured project
+      and profile.
     </p>
     <p>
       The pool, bridge and local image must already exist. Use the manual commands above if you prefer to manage
       project and profile edits yourself.
+    </p>
+
+    <h3 id="install-incus">Install the Incus dependency</h3>
+    <p>
+      <code>--install-incus</code> is a dependency-only stage for a fresh host. Without <code>--apply</code> it is a
+      plan: it reads the OS release and file metadata, runs no commands, changes nothing, and reports the recognized
+      distribution and planned steps. It cannot check APT candidates or daemon readiness. When packages are needed,
+      an unrecognized distribution fails as unsupported; a recognized one with no candidate fails during apply.
+      Existing complete installations can use the read-only verification path on other distributions. Combining it with any other
+      preparation flag is rejected. Use it before runtime preparation when Incus is absent, then run the default
+      <code>setup</code> separately.
+    </p>
+<pre class="block" tabindex="0">./bin/incus-for-devs setup --install-incus
+sudo ./bin/incus-for-devs setup --install-incus --apply</pre>
+    <p>
+      With root <code>--apply</code> it updates APT lists first, then runs a bounded simulation with
+      <code>--no-remove</code> before installing packages. <code>--no-remove</code> is the primary removal guard and
+      blocks package removals. It installs or upgrades the fixed set below plus required dependencies, and does not
+      perform a full system upgrade. It does not run <code>incus admin init</code>, initialise storage or networking,
+      prepare a project or profile, configure a public listener, pool or SSH, start the gateway, or add third-party
+      repositories, snap or LXC packages:
+    </p>
+    <ul>
+      <li><code>incus</code>, <code>incus-client</code>: daemon and CLI</li>
+      <li><code>ca-certificates</code>: CA trust roots for HTTPS image copies</li>
+      <li><code>dnsmasq-base</code>: DHCP/DNS helper required by a managed bridge</li>
+    </ul>
+    <p>
+      Apply skips APT only when the trusted client and daemon binaries exist and the daemon's <code>/1.0</code>
+      metadata is reachable. Package presence alone is not the test; a missing helper such as <code>dnsmasq-base</code>
+      is not detected or repaired on such a host. If the daemon is stopped or unreachable, apply fails without APT;
+      start or repair it, then retry.
+    </p>
+    <p>
+      Package maintainer scripts can start Incus units, restart dnsmasq, and change subuid/subgid or sysctl files, so
+      schedule a root maintenance window. Installation is not daemon or service readiness, and the installer does not
+      start the gateway service; start and verify the daemon separately. The package environment ignores
+      <code>http_proxy</code>, <code>https_proxy</code> and <code>APT_CONFIG</code>; configure an APT proxy in
+      <code>apt.conf.d</code>.
+    </p>
+
+    <h2 id="images">Images</h2>
+    <p>
+      The v0.3.0 image catalog is read-only and local. It lists <strong>predefined native Incus Linux images</strong>
+      already cached in the configured project; it is not a registry client and never contacts an image server. The
+      operator decides what is cached and approved, and the client may only choose from that set.
+    </p>
+<pre class="block" tabindex="0">ssh -p 2222 you@GATEWAY image list
+ssh -p 2222 you@GATEWAY image list --json</pre>
+    <p>
+      Text output has one image per line: the preferred alias or a short fingerprint, a 12-character fingerprint
+      prefix, and the OS release. JSON returns <code>{"images":[...]}</code> with the full <code>fingerprint</code>,
+      sorted <code>aliases</code> and optional <code>description</code>, <code>os</code>, <code>release</code> and
+      <code>architecture</code>. VM images and metadata without a valid fingerprint are omitted.
+    </p>
+    <p>
+      <code>new --image=REF</code> selects one of those cached images for a new container. <code>REF</code> is an
+      alias shown by <code>image list</code> or a 64-character fingerprint, optionally prefixed with
+      <code>local:</code>. Explicit selections reject remote references such as <code>images:debian/12</code>, URLs,
+      control characters and path traversal. Without the flag, the operator's configured <code>image</code> is used
+      unchanged; a remote default may download an image. Configure a cached local default for offline creation.
+      An alias may contain a slash only when the cached image metadata defines that exact alias, for example
+      <code>debian/12</code>.
+    </p>
+    <p>
+      The backend resolves the reference inside the cached catalog and passes only the immutable image fingerprint to
+      <code>incus launch</code>. Changing an alias later does not change an existing container, and
+      <code>ls --json</code> reports the pinned fingerprint recorded by Incus rather than a mutable alias. Unknown
+      aliases, aliases matching more than one cached image and non-container images fail before creation.
+      <code>ls -l</code> keeps its six text columns; the image is a JSON-only field.
+    </p>
+
+    <h3>Caching images is operator work</h3>
+    <p>
+      The image cache is an approval boundary owned by root and the operator. Clients have no command to pull, copy,
+      import, alias or delete an image, and the gateway uses no registry credentials. Cache images locally through the
+      operator mode, which forwards to native Incus with full administrator authority:
+    </p>
+<pre class="block" tabindex="0">incus-for-devs incus --help
+sudo incus-for-devs incus -- image copy images:debian/12 local: --alias debian-12
+sudo incus-for-devs incus -- image list local:</pre>
+    <p>
+      The restricted project and fixed profile apply to every cached image, along with unprivileged execution, the
+      namespace root mapping and the CPU, memory, process and disk limits. The image itself is still a native Incus
+      container image. The lifecycle is persistent in the container sense: the root filesystem survives stop and start,
+      while running processes do not. Prefer images that include <code>/bin/sh</code>, because guest commands run through
+      <code>/bin/sh -lc</code>.
+    </p>
+
+    <h3>A VM-like workflow, one container at a time</h3>
+    <p>
+      With <code>limits.max_instances</code> set to <code>1</code>, list the cache, choose a Debian image, then keep one
+      container as a long-lived development environment:
+    </p>
+<pre class="block" tabindex="0">ssh -p 2222 you@GATEWAY image list
+ssh -p 2222 you@GATEWAY new --image=debian-12 --name=dev
+ssh -t -p 2222 you@GATEWAY ssh dev
+# inside: install packages and keep files across stop and start</pre>
+    <p>
+      This gives a VM-like persistent development shell, but it is not a VM. Containers share the host kernel; there is
+      no hardware virtualisation, no Docker or OCI daemon, no nesting, and no KVM or real-VM path. A minimal image
+      without <code>/bin/sh</code> can be created, but its shell commands fail; fix that by caching a different image as
+      the operator, not by granting more privilege. Arbitrary OCI images, Windows images and real virtual machines are
+      not supported on any host.
+    </p>
+
+    <h3 id="operator">Local operator mode</h3>
+    <p>
+      <code>incus-for-devs incus</code> is a local application mode for host administration, not an SSH management
+      command. <code>incus-for-devs incus --help</code> prints its usage and exits 0 without root.
+      <code>sudo incus-for-devs incus -- ARGS</code> runs the native Incus CLI locally with the operator's full
+      administrator authority.
+    </p>
+    <p>
+      The configured project is the native CLI's default. Native <code>--project NAME</code> overrides it.
+      Clear it for global commands that reject a project:
+    </p>
+<pre class="block" tabindex="0">sudo incus-for-devs incus -- --project= query /1.0
+sudo incus-for-devs incus -- --project= list --all-projects</pre>
+    <p>
+      This mode is deliberately unrestricted: it is not a sandbox, it is not exposed through the SSH listener, and no
+      client or guest can invoke it. Treat every invocation as host-root administration. Use it to cache approved
+      images and perform deliberate host work, not to give a client a general Incus shell.
     </p>
 
     <h2 id="configure">Configure</h2>
@@ -234,7 +368,7 @@ sudo ./bin/incus-for-devs setup --templates deploy --apply \
           <tr><th scope="row"><code>listen</code></th><td>Loopback, a Tailscale IPv6 address, or an IPv4 address in <code>100.64.0.0/10</code>; port 1024-65535. This is a range check, not proof of tailnet membership. Wildcard and public binds are rejected.</td></tr>
           <tr><th scope="row"><code>host_key</code></th><td>Absolute path to the persistent SSH host key.</td></tr>
           <tr><th scope="row"><code>incus_binary</code></th><td>Absolute path to the Incus CLI.</td></tr>
-          <tr><th scope="row"><code>image</code>, <code>profile</code></th><td>Operator-fixed image and profile. Clients cannot override them. The image should be the cached local alias checked by setup.</td></tr>
+          <tr><th scope="row"><code>image</code>, <code>profile</code></th><td>The default cached image and the fixed profile. The profile cannot be overridden. In v0.3.0, <code>new --image</code> may select another cached image; an uncached reference is rejected. Keep this value as the cached local alias checked by setup.</td></tr>
           <tr><th scope="row"><code>limits</code></th><td>Per-container maxima for CPU, memory and processes. The defaults a client gets when it requests nothing are 1 CPU, 2GiB and 256 processes. <code>max_instances</code> counts instances in the project.</td></tr>
           <tr><th scope="row"><code>users</code></th><td>Exactly one app user: name, project and 1-16 public keys.</td></tr>
         </tbody>
@@ -304,8 +438,9 @@ ssh -p 2222 you@GATEWAY start operator-check</pre>
         <tbody>
           <tr><th scope="row"><code>help [all|COMMAND] [--json]</code></th><td>Show the supported subset or one command. <code>?</code> aliases <code>help</code>.</td></tr>
           <tr><th scope="row"><code>whoami [--json]</code></th><td>Return the authenticated app user and project.</td></tr>
-          <tr><th scope="row"><code>new [--name=NAME] [--cpu=N] [--memory=SIZE] [--processes=N] [--disk=SIZE] [--json]</code></th><td>Create and start an owned container with the configured image and profile. Omitted values use the defaults.</td></tr>
-          <tr><th scope="row"><code>ls [-l] [--json] [name-or-glob]</code></th><td>List owned containers. <code>-l</code> has six fields: name, status, CPU, memory, processes and disk.</td></tr>
+          <tr><th scope="row"><code>new [--name=NAME] [--image=REF] [--cpu=N] [--memory=SIZE] [--processes=N] [--disk=SIZE] [--json]</code></th><td>Create and start an owned container. Without <code>--image</code>, the configured image is used. <code>REF</code> is an alias or fingerprint from <code>image list</code>, optionally prefixed with <code>local:</code>; it is pinned to a cached fingerprint. Omitted resources use the defaults.</td></tr>
+          <tr><th scope="row"><code>ls [-l] [--json] [name-or-glob]</code></th><td>List owned containers. <code>-l</code> has six fields: name, status, CPU, memory, processes and disk. JSON summaries include <code>image</code> when the base-image fingerprint is known.</td></tr>
+          <tr><th scope="row"><code>image list [--json]</code></th><td>Read-only catalog of cached container images available to new containers. Text shows alias or short fingerprint, fingerprint prefix and OS release. There is no image mutation command.</td></tr>
           <tr><th scope="row"><code>clear</code></th><td>Clear the management terminal screen. Requires an interactive PTY and a non-dumb terminal; it does not remove containers or command history.</td></tr>
           <tr><th scope="row"><code>ssh NAME [COMMAND...]</code></th><td>Open a guest shell or run a guest command. Streams stdin, stdout, stderr and exit status.</td></tr>
           <tr><th scope="row"><code>start NAME [--json]</code></th><td>Start a stopped owned container. <code>resume</code> is an alias.</td></tr>
@@ -319,8 +454,9 @@ ssh -p 2222 you@GATEWAY start operator-check</pre>
     <p>
       Value flags require <code>=</code>: <code>--cpu=1</code> works, <code>--cpu 1</code> does not. <code>--json</code>
       is a bare flag. Names use 1-63 lowercase letters, digits or hyphens, start with a letter and end with a letter or
-      digit. Sizes need a positive integer and a unit such as <code>512MiB</code> or <code>2GB</code>. Unknown and
-      duplicate flags fail.
+      digit. Sizes need a positive integer and a unit such as <code>512MiB</code> or <code>2GB</code>. Image references
+      are ASCII, at most 256 bytes, and name a cached alias or 64-character fingerprint; <code>local:</code> is the only
+      accepted prefix. Unknown and duplicate flags fail.
     </p>
     <p>
       Without <code>--name=</code>, <code>new</code> picks a fruit name such as <code>mango</code>. Bare fruit names are
@@ -350,8 +486,9 @@ ssh -p 2222 you@GATEWAY start operator-check</pre>
         <thead><tr><th scope="col">Call</th><th scope="col">Shape</th></tr></thead>
         <tbody>
           <tr><th scope="row"><code>whoami --json</code></th><td><code>{"name":"you","project":"ifd-dev"}</code></td></tr>
-          <tr><th scope="row"><code>new --json</code></th><td><code>{"vm_name":"demo","status":"Running","cpu":"1","memory":"2GiB","processes":"256"}</code>, with optional <code>disk</code> when a quota is configured.</td></tr>
-          <tr><th scope="row"><code>ls --json</code></th><td><code>{"vms":[...]}</code>; an empty list is <code>{"vms":[]}</code></td></tr>
+          <tr><th scope="row"><code>new --json</code></th><td><code>{"vm_name":"demo","status":"Running","cpu":"1","memory":"2GiB","processes":"256"}</code>, with optional <code>disk</code> when a quota is configured and optional <code>image</code> when <code>--image</code> was used.</td></tr>
+          <tr><th scope="row"><code>ls --json</code></th><td><code>{"vms":[...]}</code>; an empty list is <code>{"vms":[]}</code>. Summaries may include the immutable <code>image</code> fingerprint when known.</td></tr>
+          <tr><th scope="row"><code>image list --json</code></th><td><code>{"images":[{"fingerprint":"...","aliases":["debian-12"],"description":"...","os":"Debian","release":"12","architecture":"x86_64"}]}</code>; optional metadata fields are omitted when empty.</td></tr>
           <tr><th scope="row"><code>start|stop|restart NAME --json</code></th><td><code>{"vm_name":"demo"}</code></td></tr>
           <tr><th scope="row"><code>resume NAME --json</code></th><td><code>{"vm_name":"demo"}</code> (alias of start)</td></tr>
           <tr><th scope="row"><code>rm NAME --json</code></th><td><code>{"removed":["demo"]}</code>, with an <code>errors</code> map and summary on partial failure</td></tr>
@@ -384,15 +521,17 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
 
     <h2 id="security">Security model</h2>
     <p>
-      Phase 1 is a single trusted-user gateway for unprivileged development containers. It is not a multiuser service, a
-      hostile-tenant sandbox, or a VM isolation boundary.
+      The gateway is a single trusted-user service for unprivileged development containers. It is not a multiuser
+      service, a hostile-tenant sandbox, or a VM isolation boundary.
     </p>
     <ul>
       <li>Authentication requires both the configured username and a registered public key. Tailscale provides transport, not app identity.</li>
       <li>The listener accepts loopback, Tailscale's IPv6 prefix, or IPv4 addresses in <code>100.64.0.0/10</code>, on ports 1024-65535. That checks the address range, not tailnet membership or ACLs.</li>
       <li>The service's Incus socket access is effectively host-root authority. The nologin account and systemd sandbox restrict how it is reached, not what it can do.</li>
-      <li>Containers are unprivileged with an isolated UID map, no nesting, no arbitrary host disk or path mounts and no proxy devices. They share the host kernel.</li>
-      <li>Clients cannot choose a project, profile, image, host mount or raw Incus flag.</li>
+      <li>Containers are unprivileged with an isolated UID map, no nesting, no arbitrary host disk or path mounts and no proxy devices. They share the host kernel, whichever cached image is selected.</li>
+      <li>Clients cannot choose a project, profile, host mount or raw Incus flag. <code>--image</code> may only select an image already cached by the operator, and the resolved fingerprint, not the client string, reaches Incus.</li>
+      <li>The image cache is an operator approval boundary. Clients cannot pull, copy, import, alias or delete images, and the gateway has no registry credentials or image mutation command.</li>
+      <li><code>incus-for-devs incus</code> is a local operator mode with full administrator authority, not an SSH management command. It is never exposed to clients or guests.</li>
       <li>Every list, shell and lifecycle request checks the container's owner label and project.</li>
       <li>Only SSH session channels are accepted. Agent, X11, environment, TCP forwarding and subsystem requests are refused.</li>
       <li>CPU and memory maxima are resource limits, not scheduling guarantees. Creation and starting stopped instances check host memory. An active restart revalidates limits without charging resident memory twice. Admission is not a reservation.</li>
@@ -401,15 +540,18 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
       <li>Persistence across a graceful stop and start is not a backup. Host reboot recovery is not verified.</li>
     </ul>
     <p>
-      The <code>setup</code> command only prepares the restricted project and fixed profile, and only when run with
+      The default runtime mode of <code>setup</code> prepares the restricted project and fixed profile only when run with
       root and <code>--apply</code>. It creates missing resources, never edits or deletes existing ones, and verifies
-      the result. It does not install packages, change host SSH, firewall or network configuration, create pools or
-      networks, or download images. Never expose the Incus socket or <code>incus-admin</code> group to a client or
+      the result. In this mode it does not write SSH, firewall, systemd or network configuration, create pools or
+      networks, or download images.
+      The <code>--install-incus</code> path is separate host maintenance. See
+      <a href="#install-incus">Install the Incus dependency</a> for its fixed package set, no-op gate and side effects.
+      Verify daemon readiness separately. Never expose the Incus socket or <code>incus-admin</code> group to a client or
       guest. The project restrictions depend on the operator keeping that boundary intact.
     </p>
 
     <h2 id="limits">Limits</h2>
-    <div class="tablewrap" tabindex="0" role="region" aria-label="Phase 1 limits">
+    <div class="tablewrap" tabindex="0" role="region" aria-label="Current limits">
       <table>
         <thead><tr><th scope="col">Capability</th><th scope="col">Status</th></tr></thead>
         <tbody>
@@ -421,14 +563,17 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
           <tr><th scope="row">Direct guest hostnames</th><td>Not implemented. Use <code>ssh NAME</code> through the gateway.</td></tr>
           <tr><th scope="row">OVN networks</th><td>Not supported. Setup accepts only a managed bridge network.</td></tr>
           <tr><th scope="row">Multiuser</th><td>Exactly one configured app user.</td></tr>
-          <tr><th scope="row">Custom images, profiles, projects</th><td>Operator-only. No client interface.</td></tr>
+          <tr><th scope="row">Custom images, profiles, projects</th><td>Profiles and projects are operator-only. The operator caches predefined images with local operator mode or native Incus; clients may select a cached image, but cannot change the cache.</td></tr>
+          <tr><th scope="row">Arbitrary OCI, Windows, real VMs</th><td>Not supported. The catalog is limited to native Incus container images; it is not a registry or a hardware virtualisation path.</td></tr>
+          <tr><th scope="row">Images without <code>/bin/sh</code></th><td>Can be launched, but guest commands fail because execution uses <code>/bin/sh -lc</code>. Cache a suitable image as the operator; there is no privilege upgrade.</td></tr>
+          <tr><th scope="row">VM-grade isolation</th><td>Not provided. Containers share the host kernel; a VM-like workflow is still a container.</td></tr>
           <tr><th scope="row">Tags, snapshots, billing</th><td>Not implemented.</td></tr>
           <tr><th scope="row">Host reboot recovery</th><td>Not verified. Guest autostart is disabled.</td></tr>
         </tbody>
       </table>
     </div>
     <p>
-      These are Phase 1 boundaries, not promises for a later phase. Features such as pause, file transfer, previews,
+      These are current boundaries, not promises for a later phase. Features such as pause, file transfer, previews,
       Docker, public tunnels or multiuser admission would each need a separate design and trust-boundary review.
     </p>
 
@@ -451,7 +596,23 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
           <tr><th scope="row">Setup verification mentions storage buckets</th><td>The project must set <code>features.storage.buckets=false</code>. A project created with buckets enabled does not match the template; reconcile it under change control.</td></tr>
           <tr><th scope="row">Setup refuses an existing project or profile</th><td>The live resource differs from the template. Setup prints the difference and never overwrites or deletes it. Review the diff, then reconcile or remove the resource under change control and re-run apply.</td></tr>
           <tr><th scope="row">Setup says the image is not available locally</th><td>Cache the image in Incus first, or pass the exact local alias or fingerprint. Remote references are rejected and never downloaded.</td></tr>
-          <tr><th scope="row"><code>setup V1 requires a managed bridge network</code></th><td>OVN is not supported in Phase 1. Point <code>--network</code> at a managed bridge and keep the template in sync.</td></tr>
+          <tr><th scope="row"><code>image ... is not cached</code></th><td>Run <code>image list</code> and use an alias or 64-character fingerprint from that catalog, or ask the operator to cache the image. The gateway never downloads one.</td></tr>
+          <tr><th scope="row"><code>image ... matches multiple cached images</code></th><td>The alias is ambiguous in the local cache. Use the full fingerprint from <code>image list --json</code>, or have the operator remove the duplicate alias under change control.</td></tr>
+          <tr><th scope="row"><code>image ... is not a container image</code></th><td>VM images are not usable here. Cache a native Incus container image with the operator.</td></tr>
+          <tr><th scope="row"><code>invalid image reference</code></th><td>Use an alias or fingerprint from <code>image list</code>, optionally with a <code>local:</code> prefix. URLs, other remote prefixes, control characters and path traversal are rejected.</td></tr>
+          <tr><th scope="row"><code>image add is unsupported</code></th><td>Expected. Image cache changes are operator work on the host, not a client command.</td></tr>
+          <tr><th scope="row">Guest command fails with <code>/bin/sh: not found</code></th><td>The selected native image has no shell. Keep the container and run only operator-approved alternatives, or recreate it from an operator-cached image that includes <code>/bin/sh</code>. The gateway does not grant a privilege upgrade.</td></tr>
+          <tr><th scope="row"><code>setup --install-incus</code> apply reports no candidate</th><td>The distribution was recognized, but the full simulation found no available APT candidate. Use the distribution's documented Incus package path as the operator. Setup does not add third-party repositories, snap or LXC packages. The plan cannot determine this in advance because it runs no commands.</td></tr>
+          <tr><th scope="row"><code>setup --install-incus</code> reports an unsupported distribution</th><td>This is not the same as a missing package candidate. The OS release is not recognized, so apply is not attempted. Install Incus through the distribution's documented path.</td></tr>
+          <tr><th scope="row"><code>setup --install-incus --apply</code> fails without invoking APT</th><td>Apply checks both trusted Incus client and daemon binary paths and the daemon's <code>/1.0</code> metadata before APT. A stopped or unreachable daemon fails closed with no package change. Start or repair the daemon, then retry.</td></tr>
+          <tr><th scope="row">All four packages are installed but apply is not a no-op</th><td>The no-op test is not <code>dpkg</code> package presence. Both trusted binary paths must exist and the daemon's <code>/1.0</code> metadata must be reachable. A missing helper such as <code>dnsmasq-base</code> is also not repaired on an existing complete host.</td></tr>
+          <tr><th scope="row">An APT proxy set in the environment is ignored</th><td>The package environment is fixed and minimal: <code>http_proxy</code>, <code>https_proxy</code> and <code>APT_CONFIG</code> are not read. Configure an APT proxy through <code>apt.conf.d</code> instead.</td></tr>
+          <tr><th scope="row">Native image copy fails HTTPS or certificate verification</th><td>A fresh minimal VM may lack CA trust roots. The installer's fixed dependency set includes <code>ca-certificates</code>; confirm it is installed and the host trust store is populated before operator image caching. On an existing complete host, a missing CA root does not by itself trigger a repair.</td></tr>
+          <tr><th scope="row">The installer finished but the Incus daemon is unreachable or not ready</th><td>A successful dependency install is not daemon readiness. If service startup is policy-blocked or the daemon is not running, start and verify it separately. The installer does not initialise storage or networking. Verify daemon presence and readiness with operator Incus access before running the default <code>setup</code>.</td></tr>
+          <tr><th scope="row"><code>--install-incus cannot be combined with ...</code></th><td>The installer is a separate dependency stage. Run it alone with at most <code>--apply</code>, then run the default <code>setup</code> to prepare the existing project and profile.</td></tr>
+          <tr><th scope="row"><code>incus-for-devs incus</code> refuses an operation</th><td><code>incus-for-devs incus --help</code> works without root. Actual Incus operations need root and are local-only; this mode is never available over the SSH management port.</td></tr>
+          <tr><th scope="row"><code>setup V1 requires a managed bridge network</code></th><td>OVN is not supported. Point <code>--network</code> at a managed bridge and keep the template in sync.</td></tr>
+          <tr><th scope="row">Native bridge fails because dnsmasq is missing</th><td>The managed bridge needs the <code>dnsmasq-base</code> executable. It is in the installer's fixed set, but a complete host that skips APT is not scanned for it; install it deliberately.</td></tr>
           <tr><th scope="row"><code>--apply requires root</code></th><td>Run setup with the privileges needed to create the project and profile, or run it without <code>--apply</code> for a plan.</td></tr>
           <tr><th scope="row"><code>pause is unsupported</code></th><td>Expected. Stop the container or use operator-only Incus freeze; neither restores RAM state to disk.</td></tr>
           <tr><th scope="row"><code>client mode requires OpenSSH on PATH</code></th><td>Install OpenSSH or use stock <code>ssh</code> directly.</td></tr>
@@ -483,7 +644,7 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
   <div class="wrap">
     <div class="left">
       <strong>incus.ssh</strong><br>
-      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.2.0.
+      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.3.0.
     </div>
     <nav aria-label="Footer">
       <a href="index.html">Overview</a>

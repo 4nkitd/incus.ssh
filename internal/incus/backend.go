@@ -11,10 +11,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"incus-for-devs/internal/core"
 	"incus-for-devs/internal/names"
@@ -27,12 +30,15 @@ const (
 	defaultMemory    = 2 << 30
 	defaultProcesses = 256
 	memoryReserve    = 1 << 30
+	maxImageRefBytes = 256
 )
 
 var (
-	slugPattern  = regexp.MustCompile(`^[a-z][a-z0-9-]{0,61}[a-z0-9]$|^[a-z]$`)
-	imagePattern = regexp.MustCompile(`^(?:[a-z][a-z0-9-]*:)?[a-zA-Z0-9][a-zA-Z0-9._/-]*$`)
-	sizePattern  = regexp.MustCompile(`^([0-9]+)(B|kB|KB|KiB|MB|MiB|GB|GiB|TB|TiB)$`)
+	slugPattern        = regexp.MustCompile(`^[a-z][a-z0-9-]{0,61}[a-z0-9]$|^[a-z]$`)
+	imagePattern       = regexp.MustCompile(`^(?:[a-z][a-z0-9-]*:)?[a-zA-Z0-9][a-zA-Z0-9._/-]*$`)
+	fingerprintPattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+	imageRefPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+	sizePattern        = regexp.MustCompile(`^([0-9]+)(B|kB|KB|KiB|MB|MiB|GB|GiB|TB|TiB)$`)
 )
 
 type Config struct {
@@ -319,6 +325,193 @@ func (b *Backend) resources(options core.CreateOptions) (core.CreateOptions, err
 	return options, nil
 }
 
+type imageAlias struct {
+	Name string `json:"name"`
+}
+
+type imageProperties struct {
+	Description string `json:"description"`
+	OS          string `json:"os"`
+	Release     string `json:"release"`
+}
+
+const maxImageMetadataBytes = 1024
+
+// safeImageMetadata drops cached image metadata that could break a terminal or
+// an operator's assumptions. Control characters include C0, DEL and C1 (for
+// example U+0085), so text containing them is omitted rather than rendered.
+func safeImageMetadata(value string) string {
+	if len(value) > maxImageMetadataBytes || !utf8.ValidString(value) {
+		return ""
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return ""
+		}
+	}
+	return value
+}
+
+// image is the bounded, metadata-only view of a cached Incus image. Image
+// configuration and environment are deliberately not decoded or exposed.
+type image struct {
+	Fingerprint  string          `json:"fingerprint"`
+	Type         string          `json:"type"`
+	Architecture string          `json:"architecture"`
+	Aliases      []imageAlias    `json:"aliases"`
+	Properties   imageProperties `json:"properties"`
+}
+
+func hasControl(value string) bool {
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
+// validImageToken reports whether value is a bounded native image alias.
+// Colons, URL schemes and any path traversal segment are rejected so a
+// reference can only ever name a single locally cached image.
+func validImageToken(value string) bool {
+	if value == "" || len(value) > maxImageRefBytes || strings.HasPrefix(value, "-") || hasControl(value) {
+		return false
+	}
+	if strings.Contains(value, ":") || !imageRefPattern.MatchString(value) {
+		return false
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+// normalizeImageRef validates a per-request image reference. An optional
+// local: prefix is accepted; every other remote reference is rejected because
+// requests may only select from the operator-managed local cache. Fingerprints
+// are normalized to lowercase.
+func normalizeImageRef(value string) (string, bool, error) {
+	if value == "" || len(value) > maxImageRefBytes {
+		return "", false, errors.New("image reference is empty or too long")
+	}
+	ref := strings.TrimPrefix(value, "local:")
+	if strings.Contains(ref, ":") {
+		return "", false, errors.New("remote image references are not allowed")
+	}
+	if !validImageToken(ref) {
+		return "", false, errors.New("invalid image reference")
+	}
+	if fingerprintPattern.MatchString(ref) {
+		return strings.ToLower(ref), true, nil
+	}
+	return ref, false, nil
+}
+
+func (b *Backend) imageList(ctx context.Context, principal core.Principal) ([]image, error) {
+	output, err := b.run(ctx, principal, "image", "list", "local:", "--format=json")
+	if err != nil {
+		return nil, err
+	}
+	var images []image
+	if err := json.Unmarshal(output, &images); err != nil {
+		return nil, errors.New("incus returned invalid image metadata")
+	}
+	return images, nil
+}
+
+// Images reports the cached container images visible in the principal's
+// project. It is a read-only projection: no download, copy, alias change or
+// other operator cache mutation is performed, and VM images are excluded.
+func (b *Backend) Images(ctx context.Context, principal core.Principal) ([]core.ImageInfo, error) {
+	if err := validatePrincipal(principal); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, b.config.OperationTimeout)
+	defer cancel()
+	images, err := b.imageList(ctx, principal)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]core.ImageInfo, 0, len(images))
+	for _, item := range images {
+		if item.Type != "container" || !fingerprintPattern.MatchString(item.Fingerprint) {
+			continue
+		}
+		aliases := make([]string, 0, len(item.Aliases))
+		seen := make(map[string]bool, len(item.Aliases))
+		for _, alias := range item.Aliases {
+			if !validImageToken(alias.Name) || fingerprintPattern.MatchString(alias.Name) || seen[alias.Name] {
+				continue
+			}
+			seen[alias.Name] = true
+			aliases = append(aliases, alias.Name)
+		}
+		sort.Strings(aliases)
+		result = append(result, core.ImageInfo{
+			Fingerprint:  strings.ToLower(item.Fingerprint),
+			Aliases:      aliases,
+			Description:  safeImageMetadata(item.Properties.Description),
+			OS:           safeImageMetadata(item.Properties.OS),
+			Release:      safeImageMetadata(item.Properties.Release),
+			Architecture: safeImageMetadata(item.Architecture),
+		})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Fingerprint < result[j].Fingerprint })
+	return result, nil
+}
+
+// resolveImage pins a requested alias or fingerprint to the exact cached
+// container image fingerprint used for launch. The user-supplied string never
+// reaches the CLI, and ambiguous or virtual-machine images are rejected.
+func (b *Backend) resolveImage(ctx context.Context, principal core.Principal, reference string) (string, error) {
+	ref, byFingerprint, err := normalizeImageRef(reference)
+	if err != nil {
+		return "", err
+	}
+	images, err := b.imageList(ctx, principal)
+	if err != nil {
+		return "", err
+	}
+	matches := make([]image, 0, 1)
+	seen := make(map[string]bool, 1)
+	for _, candidate := range images {
+		if !fingerprintPattern.MatchString(candidate.Fingerprint) {
+			continue
+		}
+		matched := false
+		if byFingerprint {
+			matched = strings.EqualFold(candidate.Fingerprint, ref)
+		} else {
+			for _, alias := range candidate.Aliases {
+				if alias.Name == ref {
+					matched = true
+					break
+				}
+			}
+		}
+		fingerprint := strings.ToLower(candidate.Fingerprint)
+		if !matched || seen[fingerprint] {
+			continue
+		}
+		seen[fingerprint] = true
+		matches = append(matches, candidate)
+	}
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("image %q is not cached", ref)
+	case 1:
+	default:
+		return "", fmt.Errorf("image %q matches multiple cached images", ref)
+	}
+	if matches[0].Type != "container" {
+		return "", fmt.Errorf("image %q is not a container image", ref)
+	}
+	return strings.ToLower(matches[0].Fingerprint), nil
+}
+
 type instance struct {
 	Name            string                       `json:"name"`
 	Project         string                       `json:"project"`
@@ -349,6 +542,11 @@ func (b *Backend) summary(item instance) core.Instance {
 	}
 	if processes, err := strconv.Atoi(config["limits.processes"]); err == nil && processes > 0 {
 		result.Processes = strconv.Itoa(processes)
+	}
+	// Only the immutable fingerprint recorded by Incus is reported. Aliases are
+	// mutable and are never inferred after creation.
+	if fingerprint := config["volatile.base_image"]; fingerprintPattern.MatchString(fingerprint) {
+		result.Image = strings.ToLower(fingerprint)
 	}
 	if b.disk != 0 {
 		devices := item.ExpandedDevices
@@ -440,6 +638,13 @@ func (b *Backend) Create(ctx context.Context, principal core.Principal, options 
 	if options.Name != "" && !validName(options.Name) {
 		return core.Instance{}, errors.New("invalid instance name")
 	}
+	// Syntactic rejection happens before the create gate so malformed image
+	// input can never reach the CLI, even as an argument.
+	if options.Image != "" {
+		if _, _, err := normalizeImageRef(options.Image); err != nil {
+			return core.Instance{}, err
+		}
+	}
 	options, err := b.resources(options)
 	if err != nil {
 		return core.Instance{}, err
@@ -487,7 +692,17 @@ func (b *Backend) Create(ctx context.Context, principal core.Principal, options 
 	}
 	// limits.memory is a RAM cap only. Do not add limits.memory.swap: Incus 6
 	// projects with restricted.containers.lowlevel=block reject that key.
-	args := []string{"launch", b.config.Image, options.Name, "--profile", b.config.Profile,
+	imageRef := b.config.Image
+	if options.Image != "" {
+		// The catalog is read inside the create gate and this operation's
+		// timeout. Only the resolved fingerprint reaches launch, never the
+		// user-supplied alias.
+		imageRef, err = b.resolveImage(ctx, principal, options.Image)
+		if err != nil {
+			return core.Instance{}, err
+		}
+	}
+	args := []string{"launch", imageRef, options.Name, "--profile", b.config.Profile,
 		"--config", ownerKey + "=" + principal.Name,
 		"--config", "limits.cpu=" + strconv.Itoa(options.CPU),
 		"--config", "limits.memory=" + options.Memory,
@@ -501,7 +716,11 @@ func (b *Backend) Create(ctx context.Context, principal core.Principal, options 
 	if _, err := b.run(ctx, principal, args...); err != nil {
 		return core.Instance{}, err
 	}
-	return core.Instance{Name: options.Name, Status: "Running", CPU: strconv.Itoa(options.CPU), Memory: options.Memory, Processes: strconv.Itoa(options.Processes), Disk: options.Disk}, nil
+	result := core.Instance{Name: options.Name, Status: "Running", CPU: strconv.Itoa(options.CPU), Memory: options.Memory, Processes: strconv.Itoa(options.Processes), Disk: options.Disk}
+	if options.Image != "" {
+		result.Image = imageRef
+	}
+	return result, nil
 }
 
 func (b *Backend) Remove(ctx context.Context, principal core.Principal, name string) error {

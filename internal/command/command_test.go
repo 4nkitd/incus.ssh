@@ -23,9 +23,11 @@ type call struct {
 type fakeBackend struct {
 	calls        []call
 	instances    []core.Instance
+	images       []core.ImageInfo
 	created      core.Instance
 	options      core.CreateOptions
 	listError    error
+	imagesError  error
 	createError  error
 	removeError  map[string]error
 	resumeError  error
@@ -41,6 +43,11 @@ type fakeBackend struct {
 func (f *fakeBackend) List(ctx context.Context, p core.Principal) ([]core.Instance, error) {
 	f.calls = append(f.calls, call{"list", "", ctx, p})
 	return f.instances, f.listError
+}
+
+func (f *fakeBackend) Images(ctx context.Context, p core.Principal) ([]core.ImageInfo, error) {
+	f.calls = append(f.calls, call{"images", "", ctx, p})
+	return f.images, f.imagesError
 }
 
 func (f *fakeBackend) Create(ctx context.Context, p core.Principal, options core.CreateOptions) (core.Instance, error) {
@@ -277,12 +284,14 @@ func TestLifecycleCommands(t *testing.T) {
 
 func TestInvalidInputNeverCallsBackend(t *testing.T) {
 	lines := []string{
-		"", " \t ", "bogus", "new --image=ubuntu", "new --project=default", "new --user=root", "new --profile=default",
+		"", " \t ", "bogus", "new --project=default", "new --user=root", "new --profile=default",
 		"new --name=work --unknown=x", "new --name=work --cpu=0", "new --cpu=-1", "new --cpu=1.5", "new --cpu=+2", "new --cpu=abc", "new --cpu=2147483648", "new --cpu=99999999999999999999999999",
 		"new --cpu=", "new --cpu 2", "new --processes=0", "new --processes=-1", "new --processes=1.5", "new --processes=+2", "new --processes=abc", "new --processes=2147483648", "new --processes=", "new --processes 8", "new --processes=1 --processes=2",
 		"new --memory=0GiB", "new --memory=-1GiB", "new --memory=1.5GiB", "new --memory=0", "new --memory=512", "new --memory=9999999999999999999999999B", "new --memory=garbage", "new --disk=0GB", "new --disk=1;id",
+		"new --image=", "new --image", "new --image=--latest", "new --image=-ubuntu", "new --image=http://example.com/ubuntu", "new --image=images:ubuntu", "new --image=ubuntu:24.04", "new --image=ubuntu/../x", "new --image=ubuntu//x", "new --image=ubuntu/", "new --image=/ubuntu", "new --image=local:", "new --image=local:../x", "new --image='ubuntu 24.04'", "new --image=" + strings.Repeat("a", maxImageRefBytes+1),
 		"new --name=", "new --name=-work", "new --name=work-", "new --name=UPPER", "new --name=1work", "new --name=a/b", "new --name='a b'", "new --name=" + strings.Repeat("a", 64),
 		"new work", "new --cpu=1 --cpu=2", "ls --json --json", "ls --json=true", "ls --json=false", "ls -x", "ls --all", "ls --", "ls one two", "ls '['", "ls '../*'", "ls '**/foo'", "ls ''", "ls 'a;b'", "ls " + strings.Repeat("a", 129),
+		"image", "image list extra", "image list --json=true", "image list -l", "image list --all", "image list --json --json", "image list --remote=images:ubuntu", "image --pull", "image add ubuntu", "image pull ubuntu", "image remove ubuntu", "image rm ubuntu", "image import image.tar", "image export ubuntu", "image copy ubuntu", "image alias list", "image bogus",
 		"rm", "rm good ../bad", "rm good --force", "rm good bad/thing --json", "rm good good", "rm '*'", "resume", "resume one two", "resume work --force",
 		"start", "start one two", "start work --force", "start work --timeout=5", "start work work", "start --all", "start work --project=dev-bob", "stop", "stop one two", "stop work --force", "stop --all", "stop work --timeout=0", "restart", "restart one two", "restart work --force", "restart work --timeout=0", "restart --profile=ifd",
 		"whoami extra", "whoami --keys", "help ls extra", "help unknown", "help --all", "? --unknown",
@@ -391,7 +400,7 @@ func TestContextPrincipalAndStreamsPropagation(t *testing.T) {
 		In: strings.NewReader("input"), Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, PTY: true,
 		Term: "xterm-256color", Window: core.Window{Width: 123, Height: 45}, Resize: resize, Signals: signals,
 	}
-	for _, line := range []string{"new", "ls", "rm first second", "resume work", "start work", "stop work", "restart work", "ssh work", "ssh work id"} {
+	for _, line := range []string{"new", "ls", "image list", "rm first second", "resume work", "start work", "stop work", "restart work", "ssh work", "ssh work id"} {
 		f := &fakeBackend{}
 		h := Handler{Backend: f}
 		if status := h.Handle(ctx, principal, line, s); status != 0 {
@@ -480,6 +489,10 @@ func TestRequestedJSONScan(t *testing.T) {
 		want bool
 	}{
 		{"ls --json", true},
+		{"image list --json", true},
+		{"image --json list", true},
+		{"image --json list --json", true},
+		{"image list --json # trailing comment", true},
 		{"ls --json # trailing comment", true},
 		{"ls # --json", false},
 		{"new --name=work # --json", false},
@@ -499,9 +512,9 @@ func TestRequestedJSONScan(t *testing.T) {
 
 func TestBackendErrors(t *testing.T) {
 	err := errors.New("backend refused")
-	for _, line := range []string{"new", "ls", "rm work", "resume work", "start work", "stop work", "restart work", "ssh work --json"} {
+	for _, line := range []string{"new", "ls", "image list", "rm work", "resume work", "start work", "stop work", "restart work", "ssh work --json"} {
 		for _, jsonFlag := range []string{"", " --json"} {
-			f := &fakeBackend{listError: err, createError: err, removeError: map[string]error{"work": err}, resumeError: err, startError: err, stopError: err, restartError: err, execError: err, execStatus: 42}
+			f := &fakeBackend{listError: err, imagesError: err, createError: err, removeError: map[string]error{"work": err}, resumeError: err, startError: err, stopError: err, restartError: err, execError: err, execStatus: 42}
 			status, out, stderr := run(Handler{Backend: f}, line+jsonFlag)
 			if status == 0 || !strings.Contains(out+stderr, err.Error()) {
 				t.Fatalf("%s%s: status=%d out=%q stderr=%q", line, jsonFlag, status, out, stderr)
@@ -588,12 +601,12 @@ func TestHelpListsExactlySupportedCommands(t *testing.T) {
 			t.Fatalf("help lists unsupported %s: %v", name, err)
 		}
 	}
-	for _, name := range []string{"help", "whoami", "new", "ls", "clear", "rm", "start", "stop", "restart", "resume", "ssh"} {
+	for _, name := range []string{"help", "whoami", "new", "ls", "image", "clear", "rm", "start", "stop", "restart", "resume", "ssh"} {
 		if !listed[name] {
 			t.Fatalf("help omits %s: %v", name, listed)
 		}
 	}
-	if len(listed) != 11 {
+	if len(listed) != 12 {
 		t.Fatalf("help lists unexpected commands: %v", listed)
 	}
 	flat := flattened(object["description"].(string))
@@ -699,8 +712,8 @@ type brokenWriter struct{}
 func (brokenWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
 
 func TestOutputWriteFailure(t *testing.T) {
-	for _, line := range []string{"help", "whoami --json", "ls --json", "ls", "new", "resume work", "start work", "stop work --json", "restart work", "rm work --json", "rm work", "bogus --json"} {
-		f := &fakeBackend{instances: []core.Instance{{Name: "work"}}}
+	for _, line := range []string{"help", "whoami --json", "ls --json", "ls", "image list", "image list --json", "new", "resume work", "start work", "stop work --json", "restart work", "rm work --json", "rm work", "bogus --json"} {
+		f := &fakeBackend{instances: []core.Instance{{Name: "work"}}, images: []core.ImageInfo{{Fingerprint: "0123456789abcdef"}}}
 		var stderr bytes.Buffer
 		status := (Handler{Backend: f}).Handle(context.Background(), principal, line, core.Streams{Out: brokenWriter{}, Err: &stderr})
 		if status == 0 || !strings.Contains(stderr.String(), "closed pipe") {

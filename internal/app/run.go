@@ -26,6 +26,7 @@ import (
 	"incus-for-devs/internal/core"
 	"incus-for-devs/internal/gateway"
 	"incus-for-devs/internal/incus"
+	"incus-for-devs/internal/operator"
 	"incus-for-devs/internal/setup"
 )
 
@@ -40,6 +41,8 @@ func Run(args []string) error {
 			return keygen(args[1:])
 		case "setup":
 			return setup.Run(args[1:])
+		case "incus":
+			return operator.Run(args[1:])
 		case "version", "--version":
 			fmt.Printf("incus.ssh %s (incus-for-devs CLI)\n", Version)
 			return nil
@@ -212,6 +215,8 @@ const localHelp = `incus.ssh: a private SSH gateway for trusted Linux containers
   incus-for-devs server --config /etc/incus-for-devs/config.json
   incus-for-devs keygen --path /var/lib/incus-for-devs/host.key
   incus-for-devs setup --help
+  incus-for-devs setup --install-incus [--apply]
+  sudo incus-for-devs incus -- list
   incus-for-devs version
   incus-for-devs [client] --target user@host --port 2222 help
   incus-for-devs --target your-ssh-alias ls --json

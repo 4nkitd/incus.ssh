@@ -602,11 +602,30 @@ func (b *memoryBackend) List(_ context.Context, p core.Principal) ([]core.Instan
 	return items, nil
 }
 
+func (b *memoryBackend) Images(_ context.Context, _ core.Principal) ([]core.ImageInfo, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.calls++
+	items := make([]core.ImageInfo, 0, len(imageCatalog))
+	for _, info := range imageCatalog {
+		info.Aliases = append([]string(nil), info.Aliases...)
+		items = append(items, info)
+	}
+	return items, nil
+}
+
 func (b *memoryBackend) Create(_ context.Context, p core.Principal, options core.CreateOptions) (core.Instance, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.calls++
 	b.create = options
+	image, hasImage := core.ImageInfo{}, options.Image != ""
+	if hasImage {
+		image, hasImage = fixtureImage(options.Image)
+		if !hasImage {
+			return core.Instance{}, fmt.Errorf("image %q is not cached", options.Image)
+		}
+	}
 	if b.instances[p] == nil {
 		b.instances[p] = make(map[string]core.Instance)
 	}
@@ -614,6 +633,9 @@ func (b *memoryBackend) Create(_ context.Context, p core.Principal, options core
 		return core.Instance{}, errors.New("already exists")
 	}
 	item := core.Instance{Name: options.Name, Status: "Running", CPU: "2", Memory: "1GiB", Disk: "5GiB"}
+	if hasImage {
+		item.Image = image.Fingerprint
+	}
 	if options.Processes > 0 {
 		item.Processes = strconv.Itoa(options.Processes)
 	}

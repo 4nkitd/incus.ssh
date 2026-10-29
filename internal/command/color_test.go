@@ -73,6 +73,8 @@ func TestJSONHasNoANSIOnPTY(t *testing.T) {
 		{"whoami --json", Handler{}, false},
 		{"ls --json", Handler{Backend: &fakeBackend{instances: []core.Instance{{Name: "demo", Status: "Running"}}}}, false},
 		{"ls --json", Handler{Backend: &fakeBackend{listError: errors.New("refused")}}, true},
+		{"image list --json", Handler{Backend: &fakeBackend{images: []core.ImageInfo{{Fingerprint: "0123456789abcdef", Aliases: []string{"ubuntu/24.04"}, OS: "Ubuntu", Release: "24.04"}}}}, false},
+		{"image list --json", Handler{Backend: &fakeBackend{imagesError: errors.New("refused")}}, true},
 		{"new --json", Handler{Backend: &fakeBackend{createError: errors.New("refused")}}, true},
 		{"rm --json good bad", Handler{Backend: &fakeBackend{removeError: map[string]error{"bad": errors.New("refused")}}}, true},
 	}
@@ -96,8 +98,8 @@ func TestJSONHasNoANSIOnPTY(t *testing.T) {
 func TestNonPTYHasNoANSI(t *testing.T) {
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	streams := core.Streams{Out: out, Err: errOut, Term: "xterm"}
-	h := Handler{Backend: &fakeBackend{instances: []core.Instance{{Name: "demo", Status: "Running"}}}}
-	for _, line := range []string{"help", "ls", "start demo", "stop demo", "rm demo", "ls missing"} {
+	h := Handler{Backend: &fakeBackend{instances: []core.Instance{{Name: "demo", Status: "Running"}}, images: []core.ImageInfo{{Fingerprint: "0123456789abcdef", Aliases: []string{"ubuntu/24.04"}, OS: "Ubuntu", Release: "24.04"}}}}
+	for _, line := range []string{"help", "ls", "image list", "start demo", "stop demo", "rm demo", "ls missing"} {
 		out.Reset()
 		errOut.Reset()
 		h.Handle(context.Background(), principal, line, streams)

@@ -35,6 +35,7 @@ type Streams struct {
 
 type CreateOptions struct {
 	Name      string
+	Image     string
 	CPU       int
 	Memory    string
 	Processes int
@@ -48,10 +49,21 @@ type Instance struct {
 	Memory    string `json:"memory,omitempty"`
 	Processes string `json:"processes,omitempty"`
 	Disk      string `json:"disk,omitempty"`
+	Image     string `json:"image,omitempty"`
+}
+
+type ImageInfo struct {
+	Fingerprint  string   `json:"fingerprint"`
+	Aliases      []string `json:"aliases"`
+	Description  string   `json:"description,omitempty"`
+	OS           string   `json:"os,omitempty"`
+	Release      string   `json:"release,omitempty"`
+	Architecture string   `json:"architecture,omitempty"`
 }
 
 type Backend interface {
 	List(context.Context, Principal) ([]Instance, error)
+	Images(context.Context, Principal) ([]ImageInfo, error)
 	Create(context.Context, Principal, CreateOptions) (Instance, error)
 	Remove(context.Context, Principal, string) error
 	Resume(context.Context, Principal, string) error

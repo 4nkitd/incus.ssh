@@ -39,8 +39,8 @@
           <a class="button solid" href="docs.html">Read the documentation</a>
           <a class="button" href="https://github.com/4nkitd/incus.ssh">Browse the code</a>
         </div>
-        <p class="meta">MIT licensed. Go 1.26+. Incus 6.0 tested.<br>
-          v0.2.0. Linux amd64 and macOS arm64 archives available on GitHub Releases.</p>
+        <p class="meta">MIT licensed. Go 1.26+. Incus 6.0.0 tested.<br>
+          Version 0.3.0. Linux amd64 and macOS arm64 cross-builds verified.</p>
       </div>
 
       <div class="term" role="group" aria-label="Example SSH session">
@@ -124,8 +124,10 @@
           <h3>Unsupported is a real answer</h3>
           <p>
             <code>pause</code>, SFTP, previews, Docker and OpenTunnel-style exposure are not quietly approximated.
-            They are outside Phase 1 and fail rather than pretend. <code>pause</code> cannot be done honestly with
-            Incus containers; freeze keeps RAM and stop loses process state.
+            They are outside the gateway and fail rather than pretend. <code>pause</code> cannot be done honestly with
+            Incus containers; freeze keeps RAM and stop loses process state. The v0.3.0 image catalog only
+            lists predefined, operator-cached native Linux images; it is not an OCI registry and does not add a Docker
+            daemon, nesting, KVM or real virtual machines.
           </p>
         </div>
       </div>
@@ -142,8 +144,9 @@
       <div class="cmdlist">
         <div class="cmd"><code>help</code><p>Show the supported subset.<span><code>?</code> and <code>help all</code> also work.</span></p></div>
         <div class="cmd"><code>whoami</code><p>Return the authenticated app user and project.<span>Useful as a first connectivity test.</span></p></div>
-        <div class="cmd"><code>new</code><p>Launch and start an owned container.<span>Fruit name by default; <code>--name=</code>, <code>--cpu=</code>, <code>--memory=</code>, <code>--processes=</code>, <code>--disk=</code>.</span></p></div>
+        <div class="cmd"><code>new</code><p>Launch and start an owned container.<span>Fruit name by default; <code>--name=</code>, <code>--image=</code>, <code>--cpu=</code>, <code>--memory=</code>, <code>--processes=</code>, <code>--disk=</code>.</span></p></div>
         <div class="cmd"><code>ls</code><p>List only containers you own.<span><code>-l</code> adds known limits; accepts one name or glob.</span></p></div>
+        <div class="cmd"><code>image list</code><p>See operator-cached container images.<span>Read-only; clients cannot pull, copy or delete images.</span></p></div>
         <div class="cmd"><code>ssh</code><p>Open a guest shell or run one remote command.<span>Streams stdin, stderr and the guest exit status.</span></p></div>
         <div class="cmd"><code>start</code><p>Start a stopped container.<span><code>resume</code> is an alias. Process state is gone.</span></p></div>
         <div class="cmd"><code>stop</code><p>Gracefully stop a container.<span>Files persist; running processes do not.</span></p></div>
@@ -172,7 +175,7 @@
           <ul>
             <li>Public-key authentication bound to the requested app username</li>
             <li>No passwords, anonymous auth or automatic account creation</li>
-            <li>Fixed project, image and profile; no client overrides</li>
+            <li>Fixed project and profile; image choice limited to predefined native images the operator cached</li>
             <li>Owner-label checks on list, exec and lifecycle operations</li>
             <li>CPU, memory and process limits per container</li>
             <li>Session channels only; agent, X11, environment and TCP forwarding refused</li>
@@ -182,7 +185,9 @@
         <div>
           <h3>What you still have to do</h3>
           <ul>
-            <li>Provision the restricted Incus project, profile and image</li>
+            <li>Provision the restricted Incus project and profile</li>
+            <li>Cache predefined native images for approved image selection</li>
+            <li>Treat <code>incus-for-devs incus</code> as local host-root administration, never an SSH client command</li>
             <li>Block guest access to host, private-network and cloud metadata endpoints</li>
             <li>Protect the Incus socket: its access is effectively host-root authority</li>
             <li>Provide disk quotas if the storage backend supports them</li>
@@ -219,10 +224,10 @@ go build -trimpath -o bin/incus-for-devs ./cmd/incus-for-devs</pre>
           <div class="step">
             <div>
               <h3>Prepare Incus</h3>
-              <p>Provide the storage pool, managed bridge and a cached image. Copy the build output and templates to the host, then run setup from that checkout. Setup checks them and, with <code>--apply</code>, creates missing project and profile resources; its default is a plan, and apply requires root.</p>
+              <p>Provide the storage pool, managed bridge and a predefined cached image. Copy the build output and templates to the host, then run setup from that checkout. Setup checks them and, with <code>--apply</code>, creates missing project and profile resources; its default is a plan, and apply requires root.</p>
               <pre class="block" tabindex="0">./bin/incus-for-devs setup --templates deploy
 sudo ./bin/incus-for-devs setup --templates deploy --apply</pre>
-              <p>The default image is the cached alias <code>ifd-ubuntu-24-04</code>. <code>--image</code> accepts a local alias, an optional <code>local:</code> prefix or a 64-character fingerprint; remote references are rejected and nothing is downloaded. The plan checks the daemon, pool, bridge and image, not the templates. Apply validates strict typed YAML, creates only missing resources, and fails on a mismatch instead of overwriting. OVN networks are not supported.</p>
+              <p>The default image is the cached alias <code>ifd-ubuntu-24-04</code>. <code>--image</code> accepts a local alias, an optional <code>local:</code> prefix or a 64-character fingerprint; remote references are rejected and nothing is downloaded. The default setup plan checks the daemon, pool, bridge and image, not the templates. Apply validates strict typed YAML, creates only missing resources, and fails on a mismatch instead of overwriting. OVN networks are not supported. In v0.3.0, other operator-cached native images become selectable with <code>new --image</code>. The separate <code>setup --install-incus</code> stage installs a fixed four-package dependency set for a fresh host; its plan, no-op gate and side effects are documented in <a href="docs.html#install-incus">Install the Incus dependency</a>.</p>
             </div>
           </div>
           <div class="step">
@@ -293,12 +298,12 @@ ssh -p 2222 you@GATEWAY rm operator-check</pre>
     <div class="wrap">
       <div class="section-head">
         <h2>Honest gaps.</h2>
-        <p>These are not roadmap promises. They are the parts of the experience Phase 1 does not provide.</p>
+        <p>These are not roadmap promises. They are the parts of the experience the gateway does not provide.</p>
       </div>
 
-      <div class="tablewrap" tabindex="0" role="region" aria-label="Phase 1 capability status">
+      <div class="tablewrap" tabindex="0" role="region" aria-label="Capability status">
         <table>
-          <thead><tr><th scope="col">Capability</th><th scope="col">Phase 1 status</th></tr></thead>
+          <thead><tr><th scope="col">Capability</th><th scope="col">Status</th></tr></thead>
           <tbody>
             <tr><th scope="row"><code>pause</code> and RAM checkpoint</th><td>Not implemented. Incus freeze (operator-only) keeps RAM; stop loses process state.</td></tr>
             <tr><th scope="row">SFTP, SCP, rsync</th><td>No file-transfer endpoint. Subsystem requests are rejected.</td></tr>
@@ -310,6 +315,7 @@ ssh -p 2222 you@GATEWAY rm operator-check</pre>
             <tr><th scope="row">Disk quotas</th><td>Depends on the storage backend. A directory pool may not enforce one.</td></tr>
             <tr><th scope="row">Host reboot recovery</th><td>Not verified. Guest autostart is disabled.</td></tr>
             <tr><th scope="row">VM-grade isolation</th><td>Not provided. Containers share the host kernel.</td></tr>
+            <tr><th scope="row">Arbitrary OCI, Windows, real VMs</th><td>Not supported. v0.3.0 selects only predefined, operator-cached native Incus container images. No Docker or OCI daemon, nesting or KVM/real-VM path.</td></tr>
           </tbody>
         </table>
       </div>
@@ -322,7 +328,7 @@ ssh -p 2222 you@GATEWAY rm operator-check</pre>
   <div class="wrap">
     <div class="left">
       <strong>incus.ssh</strong><br>
-      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.2.0.
+      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.3.0.
     </div>
     <nav aria-label="Footer">
       <a href="docs.html">Documentation</a>

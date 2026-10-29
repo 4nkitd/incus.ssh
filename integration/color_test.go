@@ -61,19 +61,23 @@ func TestSSHColorJSONStaysRaw(t *testing.T) {
 		} `json:"commands"`
 	}
 	assertRawJSON(t, runPTY(t, client, "help --json", nil, 0).out, &help)
-	if len(help.Commands) != 11 {
-		t.Fatalf("help JSON lists %d commands, want 11 including clear: %+v", len(help.Commands), help.Commands)
+	if len(help.Commands) != 12 {
+		t.Fatalf("help JSON lists %d commands, want 12 including image and clear: %+v", len(help.Commands), help.Commands)
 	}
-	found, hasClear := false, false
+	found, hasClear, hasImage := false, false, false
 	for _, command := range help.Commands {
 		found = found || strings.Contains(command.Usage, "help")
 		hasClear = hasClear || strings.HasPrefix(strings.TrimSpace(command.Usage), "clear")
+		hasImage = hasImage || strings.HasPrefix(strings.TrimSpace(command.Usage), "image ")
 	}
 	if !found {
 		t.Fatalf("PTY help JSON lost its command usage: %+v", help.Commands)
 	}
 	if !hasClear {
 		t.Fatalf("PTY help JSON omits the clear command: %+v", help.Commands)
+	}
+	if !hasImage {
+		t.Fatalf("PTY help JSON omits the image command: %+v", help.Commands)
 	}
 
 	var whoami core.Principal

@@ -38,7 +38,7 @@ func TestVersionCommandOutput(t *testing.T) {
 }
 
 func TestHelpIsSuccessful(t *testing.T) {
-	for _, args := range [][]string{{"--help"}, {"server", "--help"}, {"keygen", "--help"}, {"client", "--help"}, {"setup", "--help"}} {
+	for _, args := range [][]string{{"--help"}, {"server", "--help"}, {"keygen", "--help"}, {"client", "--help"}, {"setup", "--help"}, {"incus", "--help"}} {
 		if err := Run(args); err != nil {
 			t.Errorf("%v: %v", args, err)
 		}

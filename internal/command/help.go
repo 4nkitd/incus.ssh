@@ -17,8 +17,9 @@ type helpCommand struct {
 var commands = []helpCommand{
 	{"help", "help [all|COMMAND] [--json]", "Show this command reference. Alias: ?."},
 	{"whoami", "whoami [--json]", "Show the authenticated application user and Incus project."},
-	{"new", "new [--name=NAME] [--cpu=N] [--memory=SIZE] [--processes=N] [--disk=SIZE] [--json]", "Create an owned container. Omitted resources default to 1 CPU, 2GiB memory and 256 processes, each capped down by the operator maxima. Creation must also leave a 1GiB host memory reserve. Sizes use an integer and B, kB, KB, MB, GB, TB, KiB, MiB, GiB or TiB."},
-	{"ls", "ls [-l] [--json] [name-or-glob]", "List owned containers. -l adds known CPU, memory, process and disk limits."},
+	{"new", "new [--name=NAME] [--image=REF] [--cpu=N] [--memory=SIZE] [--processes=N] [--disk=SIZE] [--json]", "Create an owned container. Omitted resources default to 1 CPU, 2GiB memory and 256 processes, each capped down by the operator maxima. Creation must also leave a 1GiB host memory reserve. Sizes use an integer and B, kB, KB, MB, GB, TB, KiB, MiB, GiB or TiB. --image selects an administrator-cached image; omitted, the administrator default applies. REF is an alias or fingerprint from image list, optionally prefixed with local:."},
+	{"ls", "ls [-l] [--json] [name-or-glob]", "List owned containers. -l adds known CPU, memory, process and disk limits. JSON summaries include the image when known."},
+	{"image", "image list [--json]", "List administrator-cached images available to new containers. Read-only: pulling, importing, removing and other image cache changes are administrator work on the host."},
 	{"clear", "clear", "Clear the interactive terminal screen. Fails without an interactive terminal."},
 	{"rm", "rm [--json] NAME...", "Permanently remove owned containers and their data, without asking for confirmation. Report each failure and any successful removals."},
 	{"start", "start NAME [--json]", "Start an owned stopped container; its data is preserved. Alias: resume."},
