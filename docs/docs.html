@@ -178,7 +178,7 @@ sudo ./bin/incus-for-devs setup --templates deploy --apply \
           <tr><th scope="row"><code>--image</code></th><td>A cached local alias, an alias with a <code>local:</code> prefix, or a 64-character fingerprint. Defaults to <code>ifd-ubuntu-24-04</code>. Remote references such as <code>images:ubuntu/24.04</code> are rejected.</td></tr>
           <tr><th scope="row"><code>--config FILE</code></th><td>Read only the <code>image</code> field from a gateway JSON config. It overrides <code>--image</code>.</td></tr>
           <tr><th scope="row"><code>--incus</code></th><td>Absolute path to the Incus CLI. Defaults to <code>/usr/bin/incus</code>. Root runs require a trusted, root-owned executable and directories that are not writable by group or others.</td></tr>
-          <tr><th scope="row"><code>--install-incus</code></th><td>Separate dependency-only stage for a fresh host. It installs a fixed four-package set and does not initialise Incus or prepare the runtime. See <a href="#install-incus">Install the Incus dependency</a>.</td></tr>
+          <tr><th scope="row"><code>--install-incus</code></th><td>Separate dependency-only stage for a fresh host. It requests four packages plus required distribution dependencies and does not initialise Incus or prepare the runtime. See <a href="#install-incus">Install the Incus dependency</a>.</td></tr>
         </tbody>
       </table>
     </div>
