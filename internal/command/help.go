@@ -20,6 +20,7 @@ var commands = []helpCommand{
 	{"new", "new [--name=NAME] [--image=REF] [--cpu=N] [--memory=SIZE] [--processes=N] [--disk=SIZE] [--json]", "Create an owned container. Omitted resources default to 1 CPU, 2GiB memory and 256 processes, each capped down by the operator maxima. Creation must also leave a 1GiB host memory reserve. Sizes use an integer and B, kB, KB, MB, GB, TB, KiB, MiB, GiB or TiB. --image selects an administrator-cached image; omitted, the administrator default applies. REF is an alias or fingerprint from image list, optionally prefixed with local:."},
 	{"ls", "ls [-l] [--json] [name-or-glob]", "List owned containers. -l adds known CPU, memory, process and disk limits. JSON summaries include the image when known."},
 	{"image", "image list [--json]", "List administrator-cached images available to new containers. Read-only: pulling, importing, removing and other image cache changes are administrator work on the host."},
+	{"share", "share enable NAME PORT | share disable NAME PORT | share list [NAME] [--json]", "Explicitly publish one owned running container port over public HTTPS, disable that exact port, or list enabled ports. Private by default; no wildcard ports or host targets. Lifecycle commands and gateway restart revoke sharing; a new container boot or recreated machine cannot inherit consent. The service must listen on the container NIC. A public URL is not authentication."},
 	{"clear", "clear", "Clear the interactive terminal screen. Fails without an interactive terminal."},
 	{"rm", "rm [--json] NAME...", "Permanently remove owned containers and their data, without asking for confirmation. Report each failure and any successful removals."},
 	{"start", "start NAME [--json]", "Start an owned stopped container; its data is preserved. Alias: resume."},
@@ -31,7 +32,7 @@ var commands = []helpCommand{
 
 const (
 	helpWidth              = 78
-	unsupportedDescription = "Unsupported: pause (no RAM-to-disk suspend guarantee), share, ssh-key (including list), SFTP/SCP, direct-host routing and port forwarding."
+	unsupportedDescription = "Unsupported: pause (no RAM-to-disk suspend guarantee), ssh-key (including list), legacy SCP (-O), direct-host routing and SSH/host port forwarding. Modern SCP uses SFTP with NAME/path destinations; the container needs openssh-sftp-server."
 )
 
 var helpParagraphs = []string{

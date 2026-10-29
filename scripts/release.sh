@@ -64,6 +64,7 @@ for source in \
   TESTING.md \
   SECURITY.md \
   CHANGELOG.md \
+  docs/phase3.md \
   config.example.json \
   deploy/project.yaml \
   deploy/profile.yaml \
@@ -129,7 +130,7 @@ package_target() {
     go version -m "$bin" | grep -Fq 'GOARCH=arm64' || fail "incorrect Darwin architecture"
   fi
 
-  mkdir -p "$pack/bin" "$pack/deploy"
+  mkdir -p "$pack/bin" "$pack/deploy" "$pack/docs"
   cp "$bin" "$pack/bin/incus-for-devs"
   cp LICENSE "$pack/LICENSE"
   cp THIRD_PARTY_NOTICES.md "$pack/THIRD_PARTY_NOTICES.md"
@@ -137,6 +138,7 @@ package_target() {
   cp TESTING.md "$pack/TESTING.md"
   cp SECURITY.md "$pack/SECURITY.md"
   cp CHANGELOG.md "$pack/CHANGELOG.md"
+  cp docs/phase3.md "$pack/docs/phase3.md"
   cp config.example.json "$pack/config.example.json"
   cp deploy/project.yaml "$pack/deploy/project.yaml"
   cp deploy/profile.yaml "$pack/deploy/profile.yaml"
@@ -149,6 +151,7 @@ package_target() {
     "$pack/TESTING.md" \
     "$pack/SECURITY.md" \
     "$pack/CHANGELOG.md" \
+    "$pack/docs/phase3.md" \
     "$pack/config.example.json" \
     "$pack/deploy/project.yaml" \
     "$pack/deploy/profile.yaml" \
@@ -162,6 +165,7 @@ package_target() {
       TESTING.md \
       SECURITY.md \
       CHANGELOG.md \
+      docs/phase3.md \
       config.example.json \
       deploy/project.yaml \
       deploy/profile.yaml \
@@ -170,7 +174,7 @@ package_target() {
   tar -tzf "$archive" > "$stage/entries"
   while IFS= read -r entry; do
     case "$entry" in
-      bin/|bin/incus-for-devs|LICENSE|THIRD_PARTY_NOTICES.md|README.md|TESTING.md|SECURITY.md|CHANGELOG.md|config.example.json|deploy/|deploy/project.yaml|deploy/profile.yaml|deploy/incus-for-devs.service) ;;
+      bin/|bin/incus-for-devs|LICENSE|THIRD_PARTY_NOTICES.md|README.md|TESTING.md|SECURITY.md|CHANGELOG.md|docs/|docs/phase3.md|config.example.json|deploy/|deploy/project.yaml|deploy/profile.yaml|deploy/incus-for-devs.service) ;;
       *) fail "unexpected entry in $(basename "$archive"): $entry" ;;
     esac
   done < "$stage/entries"
@@ -182,6 +186,7 @@ package_target() {
     TESTING.md \
     SECURITY.md \
     CHANGELOG.md \
+    docs/phase3.md \
     config.example.json \
     deploy/project.yaml \
     deploy/profile.yaml \

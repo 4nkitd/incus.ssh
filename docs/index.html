@@ -1,343 +1,143 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>incus.ssh: SSH into a container, not the host</title>
-<meta name="description" content="A small Go SSH gateway for trusted Incus development containers. Public-key identities, restricted projects and a narrow command surface.">
-<link rel="stylesheet" href="styles.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>incus.ssh | Remote environments, without a control panel</title>
+  <meta name="description" content="An exe.dev-inspired SSH workflow on your own Incus server. Persistent Linux environments for development, sandboxing and small projects.">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" type="image/svg+xml" href="assets/mark.svg">
+  <script src="site.js" defer></script>
 </head>
 <body>
-
 <a class="skip-link" href="#main">Skip to content</a>
-
 <header class="top">
   <div class="wrap">
-    <a class="brand" href="index.html">
-      <span class="glyph" aria-hidden="true"></span>
-      incus.ssh
-    </a>
+    <a class="brand" href="index.html" aria-label="incus.ssh home"><span class="glyph" aria-hidden="true"></span>incus.ssh</a>
     <nav aria-label="Primary">
-      <a href="docs.html">Documentation</a>
-      <a class="hide-sm" href="https://github.com/4nkitd/incus.ssh">GitHub</a>
-      <a class="primary" href="https://github.com/4nkitd/incus.ssh">View source</a>
+      <a class="hide-sm" href="#how">How it works</a>
+      <a href="docs.html">Docs</a>
+      <a class="primary" href="https://github.com/4nkitd/incus.ssh"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m12 3 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3-5.6-3-5.6 3 1.1-6.3L2.9 9.6l6.3-.9Z"/></svg>Star on GitHub</a>
     </nav>
   </div>
 </header>
 
 <main id="main">
-
   <section class="hero">
-    <div class="wrap layout">
-      <div>
-        <h1>A door for containers.<br><em>Not for the host.</em></h1>
-        <p class="lede">
-          A small Go gateway that turns public-key SSH into a narrow management interface for Incus.
-          App users get shells inside containers they own. The host keeps its own door.
-        </p>
-        <div class="actions">
-          <a class="button solid" href="docs.html">Read the documentation</a>
-          <a class="button" href="https://github.com/4nkitd/incus.ssh">Browse the code</a>
+    <div class="wrap">
+      <div class="hero-layout">
+        <div>
+          <h1>Remote environments, without a control panel.</h1>
+          <p class="lede">The simplicity of exe.dev, on a server you own. Create a Linux environment, SSH in, install what you need and keep your work.</p>
+          <div class="actions">
+            <a class="button solid" href="#install">Set up your server</a>
+            <a href="docs.html#quickstart">Try the workflow</a>
+          </div>
+          <p class="small-note">Powered by native Incus containers. A VM-like workflow, with a shared Linux kernel. MIT licensed.</p>
         </div>
-        <p class="meta">MIT licensed. Go 1.26+. Incus 6.0.0 tested.<br>
-          Version 0.3.0. Linux amd64 and macOS arm64 cross-builds verified.</p>
+        <figure class="demo">
+          <div class="terminal-window">
+            <div class="terminal-bar"><span><i class="connection-dot" aria-hidden="true"></i>incus.ssh</span><span>your server / your environments</span></div>
+            <a href="assets/demo.gif" aria-label="View the recorded SSH session at full size">
+              <picture>
+                <source srcset="assets/demo.png" media="(prefers-reduced-motion: reduce)">
+                <img src="assets/demo.gif" width="842" height="510" alt="Real incus.ssh session: create melon, enter its guest root shell, run Linux commands and keep a project file." decoding="async" fetchpriority="high">
+              </picture>
+            </a>
+          </div>
+          <figcaption>A real native Incus session. <a href="assets/demo.txt">Read the transcript</a> or <a href="assets/demo.gif">view full size</a>.</figcaption>
+        </figure>
       </div>
-
-      <div class="term" role="group" aria-label="Example SSH session">
-        <div class="bar"><span>your machine</span><span>ssh</span></div>
-<pre tabindex="0"><span class="c">$ ssh -p 2222 you@GATEWAY</span>
-<span class="b">Incus development gateway. Type help for commands; exit to disconnect.</span>
-<span class="p">incus&gt;</span> new --cpu=2 --memory=4GiB --processes=512
-<span class="o">mango   Running</span>
-<span class="p">incus&gt;</span> ls
-<span class="o">mango   Running</span>
-<span class="p">incus&gt;</span> stop mango
-<span class="o">stopped mango</span>
-<span class="p">incus&gt;</span> start mango
-<span class="o">started mango</span>
-<span class="p">incus&gt;</span> ssh mango
-<span class="c">root@mango:~#</span> uname -s
-<span class="o">Linux</span>
-<span class="c">root@mango:~#</span> exit
-<span class="p">incus&gt;</span> exit
-<span class="c">Connection to GATEWAY closed.</span></pre>
+      <div class="install-strip" id="install">
+        <div>
+          <div class="install-command"><pre tabindex="0" aria-label="One-line server installation"><code id="install-command">curl -fsSL https://raw.githubusercontent.com/4nkitd/incus.ssh/main/install.sh | sudo bash</code></pre><button class="copy" type="button" data-copy="install-command" aria-label="Copy installation command">Copy</button></div>
+          <p>Run on a fresh Ubuntu 24.04 amd64 host. Bring your public SSH key. Private access by default.</p>
+        </div>
+        <a href="docs.html#install">What gets installed?</a>
       </div>
+      <div class="copy-status" id="copy-status" role="status" aria-live="polite"></div>
     </div>
   </section>
 
-  <div class="strip">
-    <div class="wrap">
-      <div><strong>Transport</strong>Stock OpenSSH, no custom tunnel.</div>
-      <div><strong>Identity</strong>Application username plus registered public key.</div>
-      <div><strong>Backend</strong>Incus containers in an operator-owned project.</div>
+  <div class="uses">
+    <div class="wrap use-grid">
+      <div class="use"><h2>Development</h2><p>A persistent Linux workspace, without keeping your laptop busy.</p></div>
+      <div class="use"><h2>Sandboxes</h2><p>Try packages, build tools and experiments in a separate environment.</p></div>
+      <div class="use"><h2>Small projects</h2><p>Keep a personal service on your own hardware. You own its uptime and backups.</p></div>
     </div>
   </div>
 
-  <section id="how">
+  <section class="landing-section" id="features">
     <div class="wrap">
-      <div class="section-head">
-        <h2>One authenticated path, then a hard stop.</h2>
-        <p>
-          The gateway parses a small command grammar and calls the local Incus CLI with fixed arguments.
-          It never exposes the Incus socket, and it never opens a host shell for a client.
-        </p>
+      <div class="section-head"><h2>A short path from an idea to a shell.</h2><p>No dashboard to learn. No client account to create. Just the SSH key you already use and a small set of commands.</p></div>
+      <div class="feature-rows">
+        <div class="feature-row"><h3><a href="docs.html#environments">A fresh environment when you need one</a></h3><p>Create from an approved Ubuntu or Debian image. Give it a name, or let the gateway pick a fruit.</p></div>
+        <div class="feature-row"><h3><a href="docs.html#shells">Root in the guest, not on the host</a></h3><p>Install packages, edit files and run commands inside your environment. Administrative host SSH stays separate.</p></div>
+        <div class="feature-row"><h3><a href="docs.html#lifecycle">Stop the process. Keep the project.</a></h3><p>Files survive a stop, start or restart. Come back to your working directory instead of rebuilding it.</p></div>
+        <div class="feature-row"><h3><a href="docs.html#resources">Set limits before you get carried away</a></h3><p>Choose CPU, RAM and process limits within the host's policy. The gateway checks available RAM before starting work.</p></div>
       </div>
+    </div>
+  </section>
 
-      <div class="split">
-        <div class="diagram" role="group" aria-label="Request path">
-          <div class="row">
-            <div class="n">1</div>
-            <div><div class="what">Public-key SSH to a private listener</div><div class="how">The listener binds loopback or an address in Tailscale's IPv4 range, not the host's administrative port.</div></div>
-          </div>
-          <div class="row">
-            <div class="n">2</div>
-            <div><div class="what">Username and key must both match</div><div class="how">The project comes from server configuration, not from the client.</div></div>
-          </div>
-          <div class="row">
-            <div class="n">3</div>
-            <div><div class="what">Parsed command, fixed backend arguments</div><div class="how">Clients cannot choose images, profiles, projects, mounts or raw Incus flags.</div></div>
-          </div>
-          <div class="row">
-            <div class="n">4</div>
-            <div><div class="what">Ownership check, then container execution</div><div class="how">Every operation verifies the project and the app's owner label.</div></div>
-          </div>
-          <div class="aside">
-            <strong>Host SSH stays where it is.</strong>
-            Administrative access, Tailscale configuration and the Incus socket remain separate from the tenant-facing listener.
-          </div>
+  <section class="landing-section" id="how">
+    <div class="wrap">
+      <div class="section-head"><h2>Your SSH client. One gateway. Native Incus.</h2></div>
+      <div class="how-layout">
+        <div class="how-copy">
+          <p>incus.ssh is a small Go service beside Incus. Your username and public key select a fixed project. The gateway turns a few management commands into checked Incus operations.</p>
+          <p>Type <code>ssh melon</code> in the management prompt and your terminal connects to that guest through <code>incus exec</code>. There is no second SSH daemon to configure inside the environment.</p>
+          <p>These are unprivileged Linux containers, not hardware VMs. They feel like persistent little machines, but share the host kernel. No Docker daemon or nested containers are involved.</p>
+          <a href="docs.html#architecture">Understand the boundary</a>
         </div>
-
-        <div class="prose">
-          <h3>A shell that knows what it is</h3>
-          <p>
-            Connecting with no command opens a management prompt. <code>ssh NAME</code> starts
-            <code>incus exec</code> against a container you own and wires the terminal through. There is no second
-            network hop and no host shell in between.
-          </p>
-
-          <h3>Limits live in two places</h3>
-          <p>
-            The project restricts what a container may do. The application enforces ownership, name rules and
-            per-container resource maxima. Neither relies on the client behaving well.
-          </p>
-
-          <h3>Unsupported is a real answer</h3>
-          <p>
-            <code>pause</code>, SFTP, previews, Docker and OpenTunnel-style exposure are not quietly approximated.
-            They are outside the gateway and fail rather than pretend. <code>pause</code> cannot be done honestly with
-            Incus containers; freeze keeps RAM and stop loses process state. The v0.3.0 image catalog only
-            lists predefined, operator-cached native Linux images; it is not an OCI registry and does not add a Docker
-            daemon, nesting, KVM or real virtual machines.
-          </p>
+        <div class="request-path" role="group" aria-label="Connection path from laptop to owned Incus containers">
+          <div class="path-node"><span aria-hidden="true">1</span><div><h3>Your laptop</h3><p>Stock OpenSSH and your public key.</p></div></div>
+          <div class="path-line" aria-hidden="true"></div>
+          <div class="path-node"><span aria-hidden="true">2</span><div><h3>The private gateway</h3><p>Authentication, ownership checks and a small command grammar.</p></div></div>
+          <div class="path-line" aria-hidden="true"></div>
+          <div class="path-node"><span aria-hidden="true">3</span><div><h3>Your Incus environments</h3><p>Separate filesystems, guest root shells and resource limits.</p><div class="guest-names"><code>melon</code><code>kiwi</code><code>peach</code></div></div></div>
         </div>
       </div>
     </div>
   </section>
 
-  <section id="commands">
+  <section class="landing-section" id="fit">
+    <div class="wrap fit">
+      <div><h2>Use it when you want less ceremony.</h2><ul>
+        <li><strong>You already have a Linux server.</strong> Put spare capacity to work without building a control plane.</li>
+        <li><strong>Your projects need a real Linux userland.</strong> Package managers, compilers and long-lived working directories belong here.</li>
+        <li><strong>You like the exe.dev workflow.</strong> Keep the quick SSH experience, with your own Incus host underneath.</li>
+        <li><strong>You're running trusted personal workloads.</strong> Development, experiments and hobby services are the intended fit.</li>
+      </ul></div>
+      <div><h2>Choose something else when the boundary matters more.</h2><ul>
+        <li><strong>You need VM-grade isolation.</strong> Containers share a kernel. This is not a hostile-code or untrusted-tenant security boundary.</li>
+        <li><strong>You need a managed production platform.</strong> There is no HA, SLA, automatic backup service or billing system.</li>
+        <li><strong>You need Windows, nested Docker or a multiuser cloud.</strong> Those are deliberately outside the current scope.</li>
+        <li><strong>You want public hosting to be automatic.</strong> Access starts private. Public routing is an explicit operator/user decision, not a side effect of creation.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <section class="landing-section" id="guide">
     <div class="wrap">
-      <div class="section-head">
-        <h2>A small command set. No hidden verbs.</h2>
-        <p>Management flags use <code>=</code> for values. Everything after <code>ssh NAME</code> belongs to the guest.</p>
-      </div>
-
-      <div class="cmdlist">
-        <div class="cmd"><code>help</code><p>Show the supported subset.<span><code>?</code> and <code>help all</code> also work.</span></p></div>
-        <div class="cmd"><code>whoami</code><p>Return the authenticated app user and project.<span>Useful as a first connectivity test.</span></p></div>
-        <div class="cmd"><code>new</code><p>Launch and start an owned container.<span>Fruit name by default; <code>--name=</code>, <code>--image=</code>, <code>--cpu=</code>, <code>--memory=</code>, <code>--processes=</code>, <code>--disk=</code>.</span></p></div>
-        <div class="cmd"><code>ls</code><p>List only containers you own.<span><code>-l</code> adds known limits; accepts one name or glob.</span></p></div>
-        <div class="cmd"><code>image list</code><p>See operator-cached container images.<span>Read-only; clients cannot pull, copy or delete images.</span></p></div>
-        <div class="cmd"><code>ssh</code><p>Open a guest shell or run one remote command.<span>Streams stdin, stderr and the guest exit status.</span></p></div>
-        <div class="cmd"><code>start</code><p>Start a stopped container.<span><code>resume</code> is an alias. Process state is gone.</span></p></div>
-        <div class="cmd"><code>stop</code><p>Gracefully stop a container.<span>Files persist; running processes do not.</span></p></div>
-        <div class="cmd"><code>restart</code><p>Gracefully restart a container.<span>Same data, fresh processes.</span></p></div>
-        <div class="cmd"><code>rm</code><p>Permanently delete named containers.<span>Deletes the root filesystem, even while running.</span></p></div>
-      </div>
-
-      <div class="callout">
-        <strong><code>rm</code> is destruction.</strong> It force-deletes the named container and its filesystem.
-        Use it only for containers you created and confirmed disposable.
+      <div class="section-head"><h2>The guide, without the guesswork.</h2><p>Setup, daily workflows, every command and the caveats that matter. v0.4.0 includes file transfer; experimental HTTPS sharing is clearly marked.</p></div>
+      <div class="guide-grid">
+        <a class="guide-link" href="docs.html#install"><strong>Install and connect</strong><span>One-line setup, private access, host keys and first login.</span></a>
+        <a class="guide-link" href="docs.html#environments"><strong>Manage environments</strong><span>Create, enter, stop, resume and remove. Keep the right things persistent.</span></a>
+        <a class="guide-link" href="docs.html#images"><strong>Choose an image</strong><span>Native cached Ubuntu/Debian images and the operator approval boundary.</span></a>
+        <a class="guide-link" href="docs.html#files"><strong>Copy files</strong><span>SCP/SFTP syntax, guest dependencies and owned guest paths.</span></a>
+        <a class="guide-link" href="docs.html#sharing"><strong>Publish one port</strong><span>Explicit HTTPS opt-in, disabling access and experimental-service caveats.</span></a>
+        <a class="guide-link" href="docs.html#commands"><strong>Commands and limits</strong><span>Full syntax, JSON responses, resource policy and unsupported operations.</span></a>
       </div>
     </div>
   </section>
 
-  <section id="boundary" class="dark">
-    <div class="wrap">
-      <div class="section-head">
-        <h2>The boundary is the product.</h2>
-        <p>
-          This is infrastructure for trusted development work. It is not a hostile-tenant sandbox or a virtual machine.
-        </p>
-      </div>
-      <div class="grid2">
-        <div>
-          <h3>What the gateway enforces</h3>
-          <ul>
-            <li>Public-key authentication bound to the requested app username</li>
-            <li>No passwords, anonymous auth or automatic account creation</li>
-            <li>Fixed project and profile; image choice limited to predefined native images the operator cached</li>
-            <li>Owner-label checks on list, exec and lifecycle operations</li>
-            <li>CPU, memory and process limits per container</li>
-            <li>Session channels only; agent, X11, environment and TCP forwarding refused</li>
-            <li>Strict host-key checking in the optional Go client</li>
-          </ul>
-        </div>
-        <div>
-          <h3>What you still have to do</h3>
-          <ul>
-            <li>Provision the restricted Incus project and profile</li>
-            <li>Cache predefined native images for approved image selection</li>
-            <li>Treat <code>incus-for-devs incus</code> as local host-root administration, never an SSH client command</li>
-            <li>Block guest access to host, private-network and cloud metadata endpoints</li>
-            <li>Protect the Incus socket: its access is effectively host-root authority</li>
-            <li>Provide disk quotas if the storage backend supports them</li>
-            <li>Size the host for committed RAM; swap is not part of the policy</li>
-            <li>Keep backups; persistence is not a backup strategy</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="install">
-    <div class="wrap">
-      <div class="section-head">
-        <h2>From source to a shell.</h2>
-        <p>
-          The repository ships templates and a build procedure, not a universal installer. Build on Linux first, then
-          prepare Incus and install the service.
-        </p>
-      </div>
-
-      <div class="split">
-        <div class="steps">
-          <div class="step">
-            <div>
-              <h3>Build on Linux</h3>
-              <p>Build and test somewhere approved for compilation, not the target host. Keep the Linux binary; do not overwrite it with a cross-compiled client.</p>
-              <pre class="block" tabindex="0">go mod verify
-go test -race ./...
-go vet ./...
-go build -trimpath -o bin/incus-for-devs ./cmd/incus-for-devs</pre>
-            </div>
-          </div>
-          <div class="step">
-            <div>
-              <h3>Prepare Incus</h3>
-              <p>Provide the storage pool, managed bridge and a predefined cached image. Copy the build output and templates to the host, then run setup from that checkout. Setup checks them and, with <code>--apply</code>, creates missing project and profile resources; its default is a plan, and apply requires root.</p>
-              <pre class="block" tabindex="0">./bin/incus-for-devs setup --templates deploy
-sudo ./bin/incus-for-devs setup --templates deploy --apply</pre>
-              <p>The default image is the cached alias <code>ifd-ubuntu-24-04</code>. <code>--image</code> accepts a local alias, an optional <code>local:</code> prefix or a 64-character fingerprint; remote references are rejected and nothing is downloaded. The default setup plan checks the daemon, pool, bridge and image, not the templates. Apply validates strict typed YAML, creates only missing resources, and fails on a mismatch instead of overwriting. OVN networks are not supported. In v0.3.0, other operator-cached native images become selectable with <code>new --image</code>. The separate <code>setup --install-incus</code> stage requests four runtime packages plus required distribution dependencies for a fresh host; its plan, no-op gate and side effects are documented in <a href="docs.html#install-incus">Install the Incus dependency</a>.</p>
-            </div>
-          </div>
-          <div class="step">
-            <div>
-              <h3>Configure and generate a host key</h3>
-              <p>Install the Linux binary on the host. Use a dedicated nologin service account, and replace every placeholder in the example configuration.</p>
-              <pre class="block" tabindex="0">useradd --system --user-group \
-  --home-dir /var/lib/incus-for-devs \
-  --shell /usr/sbin/nologin incus-for-devs
-install -d -o incus-for-devs -g incus-for-devs -m 0700 /var/lib/incus-for-devs
-install -d -o root -g incus-for-devs -m 0750 /etc/incus-for-devs
-install -o root -g root -m 0755 bin/incus-for-devs /usr/local/bin/incus-for-devs
-install -o root -g incus-for-devs -m 0640 prepared-config.json \
-  /etc/incus-for-devs/config.json
-
-runuser -u incus-for-devs -- /usr/local/bin/incus-for-devs keygen \
-  --path /var/lib/incus-for-devs/host.key
-
-install -o root -g root -m 0644 deploy/incus-for-devs.service \
-  /etc/systemd/system/incus-for-devs.service
-systemctl daemon-reload
-systemctl enable --now incus-for-devs.service</pre>
-            </div>
-          </div>
-          <div class="step">
-            <div>
-              <h3>Verify with a disposable container</h3>
-              <p>Verify the host-key fingerprint, log in, create one container you can lose, run a command, then remove it.</p>
-              <pre class="block" tabindex="0">ssh -p 2222 you@GATEWAY help
-ssh -p 2222 you@GATEWAY new --name=operator-check
-ssh -p 2222 you@GATEWAY ssh operator-check 'uname -a'
-ssh -p 2222 you@GATEWAY stop operator-check
-ssh -p 2222 you@GATEWAY start operator-check
-ssh -p 2222 you@GATEWAY rm operator-check</pre>
-            </div>
-          </div>
-        </div>
-
-        <div class="prose">
-          <h3>Settings that matter</h3>
-          <p>
-            The listener must be loopback or an address in Tailscale's range on a nonprivileged port. Range checks are
-            not proof of tailnet membership. The configuration file must not be writable by group or others. The host key must
-            be a private regular file and must survive restarts, or every client will see a changed-host warning.
-          </p>
-          <p>
-            <code>config.example.json</code> is a shape to copy. It points at loopback, uses a placeholder key and the
-            cached image alias, and sets operator maxima of 2 CPU, 4GiB memory and 512 processes. It will not work
-            unedited.
-          </p>
-          <div class="callout good">
-            <strong>Start narrow.</strong> New containers default to 1 CPU, 2GiB and 256 processes. Users can ask for more
-            up to the operator's maxima when the host has room, so set those maxima deliberately.
-          </div>
-          <p>
-            Memory admission keeps a 1GiB reserve, subtracts memory already committed to the project and refuses
-            a create or stopped-instance start when it does not fit. Active restarts do not charge resident memory twice. Start and restart also revalidate the stored
-            limits against current maxima. CPU maxima are per-container caps, not a scheduler. Swap is not configured,
-            counted or promised: size the host for RAM.
-          </p>
-          <p><a href="docs.html#install">Full installation and configuration guide</a></p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="limits">
-    <div class="wrap">
-      <div class="section-head">
-        <h2>Honest gaps.</h2>
-        <p>These are not roadmap promises. They are the parts of the experience the gateway does not provide.</p>
-      </div>
-
-      <div class="tablewrap" tabindex="0" role="region" aria-label="Capability status">
-        <table>
-          <thead><tr><th scope="col">Capability</th><th scope="col">Status</th></tr></thead>
-          <tbody>
-            <tr><th scope="row"><code>pause</code> and RAM checkpoint</th><td>Not implemented. Incus freeze (operator-only) keeps RAM; stop loses process state.</td></tr>
-            <tr><th scope="row">SFTP, SCP, rsync</th><td>No file-transfer endpoint. Subsystem requests are rejected.</td></tr>
-            <tr><th scope="row">Web previews and sharing</th><td>Not implemented.</td></tr>
-            <tr><th scope="row">Docker and nested containers</th><td>Not supported. Nesting is blocked by the project and profile.</td></tr>
-            <tr><th scope="row">OpenTunnel-style exposure</th><td>Not implemented. No public per-container tunnel.</td></tr>
-            <tr><th scope="row">Direct per-container hostnames</th><td>Not implemented. Use the gateway's <code>ssh NAME</code>.</td></tr>
-            <tr><th scope="row">Multiple app users</th><td>Configuration admits exactly one user.</td></tr>
-            <tr><th scope="row">Disk quotas</th><td>Depends on the storage backend. A directory pool may not enforce one.</td></tr>
-            <tr><th scope="row">Host reboot recovery</th><td>Not verified. Guest autostart is disabled.</td></tr>
-            <tr><th scope="row">VM-grade isolation</th><td>Not provided. Containers share the host kernel.</td></tr>
-            <tr><th scope="row">Arbitrary OCI, Windows, real VMs</th><td>Not supported. v0.3.0 selects only predefined, operator-cached native Incus container images. No Docker or OCI daemon, nesting or KVM/real-VM path.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
+  <div class="wrap closing">
+    <div><h2>Small enough to understand. Yours to run.</h2><p>Read the code, open an issue, or leave a star if this is your kind of infrastructure.</p></div>
+    <a class="button solid" href="https://github.com/4nkitd/incus.ssh">Find it on GitHub</a>
+  </div>
 </main>
 
-<footer>
-  <div class="wrap">
-    <div class="left">
-      <strong>incus.ssh</strong><br>
-      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.3.0.
-    </div>
-    <nav aria-label="Footer">
-      <a href="docs.html">Documentation</a>
-      <a href="https://github.com/4nkitd/incus.ssh">Source</a>
-      <a href="https://github.com/4nkitd/incus.ssh/issues">Issues</a>
-      <a href="https://github.com/4nkitd/incus.ssh/blob/main/LICENSE">License</a>
-    </nav>
-  </div>
-</footer>
-
+<footer><div class="wrap"><div><strong>incus.ssh</strong><br>Independent, exe.dev-inspired, powered by Incus.<br>Not affiliated with either project.</div><nav aria-label="Footer"><a href="docs.html">Documentation</a><a href="https://github.com/4nkitd/incus.ssh">GitHub</a><a href="https://github.com/4nkitd/incus.ssh/issues">Issues</a><a href="https://github.com/4nkitd/incus.ssh/blob/main/LICENSE">MIT license</a></nav></div></footer>
 </body>
 </html>

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"io"
+	"net"
 )
 
 type Principal struct {
@@ -75,6 +76,35 @@ type Backend interface {
 
 type Handler interface {
 	Handle(context.Context, Principal, string, Streams) int
+}
+
+type SubsystemHandler interface {
+	SupportsSubsystem(string) bool
+	Subsystem(context.Context, Principal, string, Streams) int
+}
+
+type FileBackend interface {
+	List(context.Context, Principal) ([]Instance, error)
+	OpenSFTP(context.Context, Principal, string) (io.ReadWriteCloser, error)
+}
+
+type ServiceBackend interface {
+	ServiceIdentity(context.Context, Principal, string) (string, error)
+	DialService(context.Context, Principal, string, string, int) (net.Conn, error)
+}
+
+type Share struct {
+	Name   string `json:"vm_name"`
+	Port   int    `json:"port"`
+	URL    string `json:"url"`
+	Status string `json:"status"`
+}
+
+type Sharing interface {
+	Enable(context.Context, Principal, string, int) (Share, error)
+	Disable(context.Context, Principal, string, int) error
+	List(context.Context, Principal, string) ([]Share, error)
+	ChangeMachine(context.Context, Principal, string, func() error) error
 }
 
 type Limits struct {

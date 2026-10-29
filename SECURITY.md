@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Version 0.2.0 is the current Phase 1 release. Security fixes target the current `main` branch.
+Version 0.4.0 is the current release. It includes owner-scoped SCP/SFTP and experimental, explicit per-port HTTPS sharing. Public hosted OpenTunnel API/ACME behavior and long-lived renewal are not yet verified. Security fixes target the current `main` branch.
 
 ## Reporting a vulnerability
 
@@ -31,6 +31,14 @@ This project is a single-user SSH gateway for trusted development containers. Th
 - CPU maxima are per-container caps; the gateway does not schedule or fairly share CPU time
 - Directory storage may not enforce disk quotas
 - Reboot recovery is not verified
-- `pause`, SFTP/SCP, previews, Docker/nested containers, OpenTunnel-style exposure and multiuser access are unsupported in Phase 1
+- `pause`, Docker/nested containers, direct host-port forwarding and multiuser access are unsupported
 
 Reports that abuse the trust boundary, escape project restrictions, cross app-user ownership, inject host-shell commands, bypass authentication or leak secrets are in scope. Reports about unsupported features are not vulnerabilities unless they bypass a documented failure and widen access.
+
+## File-transfer and sharing boundaries
+
+HTTPS sharing must require an authenticated user's explicit enable for each owned container and individual port. A public URL is not authentication. Service payloads and visitor-supplied forwarding headers are passed unchanged; applications must not use the gateway's peer address or those headers to bypass authentication. Host interface targets, wildcard publication and inherited approval on a recreated machine are outside the allowed boundary.
+
+SCP/SFTP paths select an owned guest through their first component. Neither a path nor a symlink may select the host filesystem or another app user's guest. Transfers have the guest-root authority already available through the guest shell. The gateway must not run client-supplied paths in a host shell or stage file data in the host filesystem.
+
+See [the feature guide](docs/phase3.md) for exact supported behavior and remaining verification gates. A release never authorizes automatic upgrades, service restarts or public exposure on an existing installation.

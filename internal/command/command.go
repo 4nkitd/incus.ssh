@@ -29,6 +29,8 @@ const noopRemoteCommand = ":"
 type Handler struct {
 	Backend core.Backend
 	Limits  core.Limits
+	Sharing core.Sharing
+	Files   core.FileBackend
 }
 
 var _ core.Handler = (*Handler)(nil)
@@ -88,6 +90,8 @@ func (h Handler) Handle(ctx context.Context, p core.Principal, line string, s co
 		return writeText(s, "%s\t%s\n", p.Name, p.Project)
 	case "clear":
 		return clearScreen(s)
+	case "share":
+		return h.share(ctx, p, r, s)
 	}
 	if h.Backend == nil {
 		return failure(s, r.json, errors.New("backend is not configured"))
@@ -225,7 +229,7 @@ func (h Handler) remove(ctx context.Context, p core.Principal, r request, s core
 	}{Removed: make([]string, 0, len(r.args))}
 	status := 0
 	for _, name := range r.args {
-		if err := h.Backend.Remove(ctx, p, name); err != nil {
+		if err := h.machineChange(ctx, p, name, func() error { return h.Backend.Remove(ctx, p, name) }); err != nil {
 			status = 1
 			if result.Errors == nil {
 				result.Errors = make(map[string]string)
@@ -254,7 +258,7 @@ func (h Handler) remove(ctx context.Context, p core.Principal, r request, s core
 
 func (h Handler) lifecycle(ctx context.Context, p core.Principal, r request, s core.Streams, action string, apply func(context.Context, core.Principal, string) error) int {
 	name := r.args[0]
-	if err := apply(ctx, p, name); err != nil {
+	if err := h.machineChange(ctx, p, name, func() error { return apply(ctx, p, name) }); err != nil {
 		return failure(s, r.json, err)
 	}
 	if r.json {
@@ -266,6 +270,13 @@ func (h Handler) lifecycle(ctx context.Context, p core.Principal, r request, s c
 		return writeText(s, "%s %s\n", terminal.Style(s, terminal.Yellow, action), name)
 	}
 	return writeText(s, "%s %s\n", terminal.Style(s, terminal.Green, action), name)
+}
+
+func (h Handler) machineChange(ctx context.Context, p core.Principal, name string, apply func() error) error {
+	if h.Sharing != nil {
+		return h.Sharing.ChangeMachine(ctx, p, name, apply)
+	}
+	return apply()
 }
 
 // statusStyle keeps running green and every other reported status amber; it
@@ -445,6 +456,10 @@ func parse(line string) (request, error) {
 		default:
 			return r, fmt.Errorf("unknown image subcommand %q; use image list", r.args[0])
 		}
+	case "share":
+		if err := validateShareArgs(r.args); err != nil {
+			return r, err
+		}
 	}
 	return r, nil
 }
@@ -543,11 +558,11 @@ func validImageRef(value string) error {
 
 func unsupported(command string) error {
 	switch command {
-	case "help", "?", "whoami", "new", "ls", "image", "clear", "rm", "resume", "start", "stop", "restart", "ssh":
+	case "help", "?", "whoami", "new", "ls", "image", "share", "clear", "rm", "resume", "start", "stop", "restart", "ssh":
 		return nil
 	case "pause":
 		return errors.New("pause is unsupported: Incus containers cannot promise exe.dev RAM-to-disk suspend; stop and freeze are not substitutes")
-	case "share", "ssh-key", "sftp", "scp", "portforward", "port-forward", "forward", "direct-host":
+	case "ssh-key", "sftp", "scp", "portforward", "port-forward", "forward", "direct-host":
 		return fmt.Errorf("%s is unsupported by incus-for-devs", command)
 	default:
 		return fmt.Errorf("unknown command %q; use help", command)

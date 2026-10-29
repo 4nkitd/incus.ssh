@@ -146,10 +146,17 @@ func TestIncusHelper(t *testing.T) {
 			time.Sleep(time.Hour)
 		}
 	}
-	if len(args) < 6 {
+	if len(args) < 5 {
 		os.Exit(91)
 	}
 	dir, args := args[0], args[1:]
+	actualArgs := args
+	if len(args) == 4 && reflect.DeepEqual(args[:3], []string{"--force-local", "--quiet", "query"}) {
+		if args[3] != "/1.0/networks/incusbr0?project="+alice.Project {
+			os.Exit(92)
+		}
+		args = append([]string{"--force-local", "--project", alice.Project, "--quiet"}, args[2:]...)
+	}
 	if !reflect.DeepEqual(args[:4], []string{"--force-local", "--project", alice.Project, "--quiet"}) {
 		os.Exit(92)
 	}
@@ -157,7 +164,7 @@ func TestIncusHelper(t *testing.T) {
 	if err != nil {
 		os.Exit(93)
 	}
-	_ = json.NewEncoder(log).Encode(args)
+	_ = json.NewEncoder(log).Encode(actualArgs)
 	_ = log.Close()
 	var behavior scenario
 	data, _ := os.ReadFile(filepath.Join(dir, "scenario.json"))
@@ -207,6 +214,21 @@ func TestIncusHelper(t *testing.T) {
 	data, _ = os.ReadFile(filepath.Join(dir, "instances.json"))
 	_ = json.Unmarshal(data, &items)
 	switch action {
+	case "query":
+		data, err := os.ReadFile(filepath.Join(dir, "network.json"))
+		if err != nil {
+			os.Exit(98)
+		}
+		_, _ = os.Stdout.Write(data)
+	case "network":
+		if !reflect.DeepEqual(args[5:], []string{"list-leases", "incusbr0", "--format=json"}) {
+			os.Exit(98)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, "leases.json"))
+		if err != nil {
+			os.Exit(98)
+		}
+		_, _ = os.Stdout.Write(data)
 	case "list":
 		_ = json.NewEncoder(os.Stdout).Encode(items)
 	case "image":

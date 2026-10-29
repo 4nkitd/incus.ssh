@@ -328,7 +328,7 @@ func TestValidationErrorsUseRequestedJSON(t *testing.T) {
 }
 
 func TestUnsupportedCommands(t *testing.T) {
-	for _, command := range []string{"pause", "share", "ssh-key list", "ssh-key add secret", "sftp", "scp", "portforward", "port-forward", "direct-host"} {
+	for _, command := range []string{"pause", "ssh-key list", "ssh-key add secret", "sftp", "scp", "portforward", "port-forward", "direct-host"} {
 		for _, jsonFlag := range []string{"", " --json"} {
 			line := command + jsonFlag
 			t.Run(line, func(t *testing.T) {
@@ -601,12 +601,12 @@ func TestHelpListsExactlySupportedCommands(t *testing.T) {
 			t.Fatalf("help lists unsupported %s: %v", name, err)
 		}
 	}
-	for _, name := range []string{"help", "whoami", "new", "ls", "image", "clear", "rm", "start", "stop", "restart", "resume", "ssh"} {
+	for _, name := range []string{"help", "whoami", "new", "ls", "image", "share", "clear", "rm", "start", "stop", "restart", "resume", "ssh"} {
 		if !listed[name] {
 			t.Fatalf("help omits %s: %v", name, listed)
 		}
 	}
-	if len(listed) != 12 {
+	if len(listed) != 13 {
 		t.Fatalf("help lists unexpected commands: %v", listed)
 	}
 	flat := flattened(object["description"].(string))
@@ -662,7 +662,7 @@ func TestHelpAndIdentity(t *testing.T) {
 	if strings.Contains(unsupportedDescription, "stop") || strings.Contains(unsupportedDescription, "restart") {
 		t.Fatalf("help still lists stop/restart as unsupported: %q", unsupportedDescription)
 	}
-	if !strings.Contains(unsupportedDescription, "share") || !strings.Contains(unsupportedDescription, "ssh-key") || !strings.Contains(unsupportedDescription, "SFTP") {
+	if !strings.Contains(unsupportedDescription, "ssh-key") || !strings.Contains(unsupportedDescription, "SFTP") {
 		t.Fatalf("help lost unsupported commands: %q", unsupportedDescription)
 	}
 	limits := core.Limits{MaxInstances: 3, CPU: 4, Memory: "8GiB", Processes: 512, Disk: "20GB"}

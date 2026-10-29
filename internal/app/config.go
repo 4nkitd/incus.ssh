@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -30,6 +31,12 @@ type Config struct {
 	MaxSessions             int         `json:"max_sessions"`
 	Limits                  core.Limits `json:"limits"`
 	Users                   []User      `json:"users"`
+	Sharing                 *Sharing    `json:"sharing,omitempty"`
+}
+
+type Sharing struct {
+	API            string `json:"api"`
+	StateDirectory string `json:"state_directory"`
 }
 
 var slug = regexp.MustCompile(`^[a-z](?:[a-z0-9-]{0,46}[a-z0-9])?$`)
@@ -95,6 +102,18 @@ func (c *Config) Validate() error {
 	}
 	if c.Limits.Processes == 0 {
 		c.Limits.Processes = 256
+	}
+	if c.Sharing != nil {
+		if c.Sharing.API == "" {
+			c.Sharing.API = "https://opentunnel.xyz"
+		}
+		u, err := url.Parse(c.Sharing.API)
+		if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+			return errors.New("sharing.api must be an HTTPS origin without credentials, path, query or fragment")
+		}
+		if !filepath.IsAbs(c.Sharing.StateDirectory) || filepath.Clean(c.Sharing.StateDirectory) != c.Sharing.StateDirectory || c.Sharing.StateDirectory == "/" {
+			return errors.New("sharing.state_directory must be an absolute private state directory")
+		}
 	}
 	// Admission is per-project until a global resource allocator is implemented.
 	if len(c.Users) != 1 {

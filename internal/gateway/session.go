@@ -90,6 +90,7 @@ func serveSession(ctx context.Context, channel ssh.Channel, requests <-chan *ssh
 			start := false
 			command := ""
 			shell := false
+			subsystem := ""
 			if len(request.Payload) <= maxCommandLength+1024 {
 				switch request.Type {
 				case "pty-req":
@@ -127,7 +128,13 @@ func serveSession(ctx context.Context, channel ssh.Channel, requests <-chan *ssh
 					if !started && len(request.Payload) == 0 {
 						accepted, start, shell = true, true, true
 					}
-				case "env", "subsystem", "auth-agent-req@openssh.com", "x11-req":
+				case "subsystem":
+					var p struct{ Name string }
+					support, ok := handler.(core.SubsystemHandler)
+					if !started && !streams.PTY && ok && ssh.Unmarshal(request.Payload, &p) == nil && support.SupportsSubsystem(p.Name) {
+						accepted, start, subsystem = true, true, p.Name
+					}
+				case "env", "auth-agent-req@openssh.com", "x11-req":
 					accepted = false
 				}
 			}
@@ -145,16 +152,20 @@ func serveSession(ctx context.Context, channel ssh.Channel, requests <-chan *ssh
 			if start {
 				started = true
 				running.Add(1)
-				go func(streams core.Streams, command string, shell bool, finish func()) {
+				go func(streams core.Streams, command string, shell bool, subsystem string, finish func()) {
 					defer running.Done()
 					if shell {
 						result <- repl(ctx, principal, managed, streams)
+					} else if subsystem != "" {
+						code := handler.(core.SubsystemHandler).Subsystem(ctx, principal, subsystem, streams)
+						finish()
+						result <- code
 					} else {
 						code := handler.Handle(ctx, principal, command, streams)
 						finish()
 						result <- code
 					}
-				}(commandStreams, command, shell, finish)
+				}(commandStreams, command, shell, subsystem, finish)
 			}
 		}
 	}

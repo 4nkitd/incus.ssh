@@ -2,6 +2,19 @@
 
 Notable changes to incus.ssh.
 
+## v0.4.0 - 2026-10-29
+
+- A one-line fresh Ubuntu 24.04 amd64 bootstrap, checksum-pinned to the v0.4.0 archive. It prepares native Incus, namespaced storage/network/project resources, public-key configuration and a new private gateway service. Existing gateways are never upgraded or restarted by it.
+- Short quick-start README with a real native Incus terminal GIF, a system-light/dark branding site, high-contrast dark colors, restrained reduced-motion-aware animation and a feature-oriented documentation guide.
+
+- Experimental pure-Go OpenTunnel protocol client with local key/CSR generation, private resumable identity storage, certificate refresh, multiplexed TLS, byte-bounded queues and reconnects. Protocol reference pinned to upstream commit `20aacfabbf0049c6ba026109adcaae716d1b3a5d`. Native-guest traffic was tested through a loopback relay; public hosted API/ACME and long-lived renewal are not yet verified.
+- Explicit `share enable NAME PORT`, `share disable NAME PORT` and `share list [NAME]`, including JSON. Each owned machine-port pair requires its own opt-in. New machines and unselected ports remain private. Approvals are runtime-only and are revoked by gateway lifecycle commands and gateway shutdown. New Incus UUIDs do not inherit consent.
+- Optional operator `sharing` configuration allows the capability but does not publish any service. Direct host ports, SSH forwarding and Incus proxy devices remain closed.
+- Modern stock SCP/SFTP via `NAME/path`, routed through an owned running container's SFTP server. Includes streaming file transfers and recursive copies without host staging. Guest `openssh-sftp-server` is required; no guest SSH listener is needed. Legacy `scp -O`, append and creating links remain unsupported.
+- Local SSH/SCP, TLS/relay, ownership, per-port opt-in, recreation, cancellation and persistence regression tests. Full Linux root/non-root race suites and real native Incus file transfer, permissions and boot-bound relay checks passed. Production activation and hosted-relay verification remain separate gates.
+
+See [docs/phase3.md](docs/phase3.md). Publishing a release does not deploy or restart an existing gateway. HTTPS sharing is opt-in and experimental; SCP requires a guest SFTP server.
+
 ## v0.3.0 - 2026-10-29
 
 #### Added

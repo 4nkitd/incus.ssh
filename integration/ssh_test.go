@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
 	"incus-for-devs/internal/command"
@@ -357,13 +358,14 @@ func generatedKey(t *testing.T, name string) keyFile {
 }
 
 type testGateway struct {
-	address string
-	host    ssh.PublicKey
-	keys    map[string]ssh.Signer
-	backend *memoryBackend
-	cancel  context.CancelFunc
-	done    chan struct{}
-	err     error
+	address  string
+	host     ssh.PublicKey
+	keys     map[string]ssh.Signer
+	keyFiles map[string]string
+	backend  *memoryBackend
+	cancel   context.CancelFunc
+	done     chan struct{}
+	err      error
 }
 
 func startGateway(t *testing.T) *testGateway {
@@ -376,15 +378,16 @@ func startGateway(t *testing.T) *testGateway {
 		cancel()
 		t.Fatal(err)
 	}
-	s := &testGateway{address: listener.Addr().String(), host: host.signer.PublicKey(), keys: make(map[string]ssh.Signer), backend: backend, cancel: cancel, done: make(chan struct{})}
+	s := &testGateway{address: listener.Addr().String(), host: host.signer.PublicKey(), keys: make(map[string]ssh.Signer), keyFiles: make(map[string]string), backend: backend, cancel: cancel, done: make(chan struct{})}
 	cfg := gateway.Config{
 		HostKeyPath: host.path,
-		Handler:     &command.Handler{Backend: backend, Limits: core.Limits{MaxInstances: 4, CPU: 2, Memory: "1GiB", Processes: 512, Disk: "5GiB"}},
+		Handler:     &command.Handler{Backend: backend, Files: backend, Limits: core.Limits{MaxInstances: 4, CPU: 2, Memory: "1GiB", Processes: 512, Disk: "5GiB"}},
 		MaxSessions: 8,
 	}
 	for _, p := range []core.Principal{alice, bob} {
 		key := generatedKey(t, p.Name)
 		s.keys[p.Name] = key.signer
+		s.keyFiles[p.Name] = key.path
 		cfg.Users = append(cfg.Users, gateway.AuthorizedUser{Principal: p, AuthorizedKeys: []string{string(ssh.MarshalAuthorizedKey(key.signer.PublicKey()))}})
 	}
 	go func() {
@@ -580,6 +583,7 @@ type lifecycleCall struct {
 type memoryBackend struct {
 	mu        sync.Mutex
 	instances map[core.Principal]map[string]core.Instance
+	files     map[fileKey]sftp.Handlers
 	calls     int
 	exec      execCall
 	create    core.CreateOptions
@@ -651,6 +655,7 @@ func (b *memoryBackend) Remove(_ context.Context, p core.Principal, name string)
 		return errors.New("instance not owned by principal")
 	}
 	delete(b.instances[p], name)
+	delete(b.files, fileKey{p, name})
 	return nil
 }
 

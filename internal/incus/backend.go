@@ -517,6 +517,7 @@ type instance struct {
 	Project         string                       `json:"project"`
 	Type            string                       `json:"type"`
 	Status          string                       `json:"status"`
+	LastUsedAt      time.Time                    `json:"last_used_at"`
 	Config          map[string]string            `json:"config"`
 	ExpandedConfig  map[string]string            `json:"expanded_config"`
 	Devices         map[string]map[string]string `json:"devices"`
@@ -809,7 +810,12 @@ func (b *Backend) lifecycle(ctx context.Context, principal core.Principal, name,
 }
 
 func (b *Backend) command(ctx context.Context, principal core.Principal, args ...string) *exec.Cmd {
-	args = append([]string{"--force-local", "--project", principal.Project, "--quiet"}, args...)
+	prefix := []string{"--force-local", "--project", principal.Project, "--quiet"}
+	if len(args) > 0 && args[0] == "query" {
+		// Incus 6 rejects --project for raw queries; their API URI carries project scope.
+		prefix = []string{"--force-local", "--quiet"}
+	}
+	args = append(prefix, args...)
 	cmd := exec.CommandContext(ctx, b.config.Binary, args...)
 	cmd.Env = append([]string(nil), b.env...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

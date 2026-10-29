@@ -28,6 +28,7 @@ import (
 	"incus-for-devs/internal/incus"
 	"incus-for-devs/internal/operator"
 	"incus-for-devs/internal/setup"
+	"incus-for-devs/internal/sharing"
 )
 
 var Version = "development"
@@ -108,9 +109,15 @@ func serve(args []string) error {
 	}
 	defer listener.Close()
 	fmt.Fprintln(os.Stderr, "private SSH gateway listening on", listener.Addr())
+	handler := &command.Handler{Backend: backend, Limits: limits, Files: backend}
+	if cfg.Sharing != nil {
+		manager := sharing.New(ctx, backend, sharing.Options{API: cfg.Sharing.API, Directory: cfg.Sharing.StateDirectory})
+		defer manager.Close()
+		handler.Sharing = manager
+	}
 	return gateway.Serve(ctx, listener, gateway.Config{
 		HostKeyPath: cfg.HostKey, Users: users, MaxSessions: cfg.MaxSessions,
-		Handler: &command.Handler{Backend: backend, Limits: limits},
+		Handler: handler,
 	})
 }
 

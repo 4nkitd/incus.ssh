@@ -3,9 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>Documentation · incus.ssh</title>
 <meta name="description" content="Installation, configuration, commands and security model for incus.ssh.">
 <link rel="stylesheet" href="styles.css">
+<link rel="icon" type="image/svg+xml" href="assets/mark.svg">
+<script src="site.js" defer></script>
 </head>
 <body>
 
@@ -18,9 +21,9 @@
       incus.ssh
     </a>
     <nav aria-label="Primary">
-      <a href="index.html">Overview</a>
-      <a class="hide-sm" href="https://github.com/4nkitd/incus.ssh">GitHub</a>
-      <a class="primary" href="https://github.com/4nkitd/incus.ssh">View source</a>
+      <a href="index.html">Home</a>
+      <a href="docs.html" aria-current="page">Docs</a>
+      <a class="primary" href="https://github.com/4nkitd/incus.ssh">Star on GitHub</a>
     </nav>
   </div>
 </header>
@@ -28,46 +31,65 @@
 <div class="wrap doc-shell">
 
   <aside class="doc-nav" aria-label="Documentation sections">
-    <p>Guide</p>
-    <a href="#overview">Overview</a>
-    <a href="#requirements">Requirements</a>
-    <a href="#build">Build and test</a>
-    <a href="#install">Prepare Incus</a>
+    <details id="guide-navigation" open>
+    <summary>Browse the guide</summary>
+    <nav class="doc-links" aria-label="Guide sections">
+    <p>Get started</p>
+    <a href="#overview">What is incus.ssh?</a>
+    <a href="#install">One-line installation</a>
+    <a href="#connect">Connect from your laptop</a>
+    <a href="#quickstart">Your first environment</a>
+    <p class="sub">Workflows</p>
+    <a href="#environments">Create environments</a>
+    <a href="#shells">Shells and commands</a>
+    <a href="#lifecycle">Stop, start and persist</a>
     <a href="#images">Images</a>
-    <a href="#operator">Operator mode</a>
-    <a href="#configure">Configure</a>
-    <a href="#service">Run as a service</a>
-    <a href="#verify">First login</a>
-    <a href="#commands">Commands</a>
-    <a href="#json">JSON output</a>
-    <a href="#client">Go client</a>
-    <a href="#security">Security model</a>
-    <a href="#limits">Limits</a>
+    <a href="#resources">Resource limits</a>
+    <a href="#files">SCP / SFTP</a>
+    <a href="#sharing">Experimental HTTPS sharing</a>
+    <a href="#json">Automation and JSON</a>
+    <p class="sub">Reference</p>
+    <a href="#commands">Every command</a>
+    <a href="#configure">Configuration</a>
+    <a href="#prepare">Manual setup</a>
+    <a href="#operator">Local operator mode</a>
+    <a href="#security">Architecture and security</a>
+    <a href="#limits">Caveats and non-goals</a>
     <a href="#troubleshooting">Troubleshooting</a>
-    <a href="#development">Development</a>
+    <a href="#build">Build from source</a>
     <p class="sub">Project</p>
     <a href="https://github.com/4nkitd/incus.ssh">Source</a>
     <a href="https://github.com/4nkitd/incus.ssh/issues">Issues</a>
     <a href="https://github.com/4nkitd/incus.ssh/blob/main/LICENSE">MIT license</a>
+    </nav>
+    </details>
   </aside>
 
   <main class="doc-body" id="main">
     <h1>Documentation</h1>
     <p class="doc-intro">
-      Everything needed to build, install and operate the gateway, plus the boundaries that keep it from becoming a
-      host-access tool. Commands below use <code>GATEWAY</code>, <code>you</code>, <code>ifd-dev</code> and
-      <code>devpool</code> as placeholders.
+      Start with a private server, create an environment and get to work. This guide covers each workflow,
+      its commands and the limits you should know before relying on it.
     </p>
-    <p class="doc-meta">v0.3.0. Incus 6.0.0 on Ubuntu 24.04. Go 1.26+.</p>
+    <p class="doc-meta">v0.4.0. Incus 6.0.0 on Ubuntu 24.04. Go 1.26+ for source builds.</p>
 
     <div class="callout">
-      <strong>Version 0.3.0.</strong> Source and release notes are on
-      <a href="https://github.com/4nkitd/incus.ssh/releases/tag/v0.3.0">GitHub</a>; build from source with Go 1.26+.
-      Linux amd64 and macOS arm64 cross-builds were verified. The CLI binary and systemd service are named
-      <code>incus-for-devs</code>.
+      <strong>Current release: v0.4.0.</strong> The one-line installer uses the checksum-pinned released binary.
+      SCP/SFTP requires a server executable inside the guest. HTTPS sharing is optional and experimental; public hosted
+      API/ACME behavior is not yet verified.
+      The executable and service keep the name <code>incus-for-devs</code>.
+    </div>
+
+    <div class="feature-index" aria-label="Choose a workflow">
+      <a href="#install">Install a server</a><a href="#quickstart">Try the SSH workflow</a>
+      <a href="#images">Choose Ubuntu or Debian</a><a href="#resources">Set CPU and RAM limits</a>
+      <a href="#files">Copy files</a><a href="#sharing">Publish one service</a>
     </div>
 
     <h2 id="overview">Overview</h2>
+    <p>incus.ssh brings an exe.dev-inspired workflow to a server you control, powered by native Incus Linux containers.
+      Use it for persistent development workspaces, trusted sandboxes and small personal services. It is a VM-like
+      experience, not VM isolation. Guests share the host's Linux kernel.</p>
     <p>
       <code>incus.ssh</code> is one Go executable with two modes. Server mode runs a private SSH listener beside
       Incus. Client mode invokes your installed OpenSSH with strict checking and no forwarding. Plain
@@ -84,10 +106,136 @@
       per-container maxima. Names are fruit-based unless you pass <code>--name=</code>.
     </p>
     <p>
-      The v0.3.0 release adds a read-only catalog of predefined native images cached by the operator and
-      <code>new --image=REF</code> to choose among them. The configured image remains the default, and the client still
+      The read-only catalog lists predefined native images cached by the operator, and
+      <code>new --image=REF</code> chooses among them. The configured image remains the default, and the client still
       cannot pull or copy an image.
     </p>
+
+    <h2 id="install">One-line installation</h2>
+    <p>Run this on a fresh <strong>Ubuntu 24.04 amd64</strong> server with systemd and administrative access.
+      A 2-CPU, 4GB-RAM host is a useful starting point. You need <code>curl</code> and your public SSH key.</p>
+    <div class="install-command"><pre tabindex="0"><code id="install-command">curl -fsSL https://raw.githubusercontent.com/4nkitd/incus.ssh/main/install.sh | sudo bash</code></pre><button class="copy" type="button" data-copy="install-command" aria-label="Copy installation command">Copy</button></div>
+    <div class="copy-status" id="copy-status" role="status" aria-live="polite"></div>
+    <p>The script asks for your public key, shows the changes and asks for confirmation. Never paste a private key.
+      To inspect it first, <a href="https://github.com/4nkitd/incus.ssh/blob/main/install.sh">read the installer source</a>.
+      It installs the released v0.4.0 archive only after checking its pinned SHA-256.</p>
+    <p>Setup installs the native Incus dependencies, creates a directory pool named <code>ifd-pool</code> and a managed
+      bridge named <code>ifdbr0</code>, caches native Ubuntu 24.04, prepares the restricted <code>ifd-dev</code> project,
+      and starts a new private gateway. The app username is <code>dev</code>. The default count limit is one container.</p>
+    <p>It does not change administrative SSH, install Tailscale, adopt existing gateway resources or publish a guest port.
+      An existing installation is left alone. A conflicting or incomplete installation fails rather than being overwritten.
+      Setup is not transactional: after an error, inspect the reported state before cleaning up or retrying.</p>
+    <p>For automation, pass a public-key file and confirm the same plan explicitly:</p>
+<pre class="block" tabindex="0">curl -fsSL https://raw.githubusercontent.com/4nkitd/incus.ssh/main/install.sh | \
+  sudo bash -s -- --yes --ssh-key-file ./my-key.pub \
+  --listen 127.0.0.1:2222</pre>
+    <p>For direct tailnet access, use <code>--listen YOUR_TAILSCALE_IP:2222</code>. The address must already be assigned to
+      this host. Public and wildcard listeners are rejected. Other operating systems and custom existing Incus setups
+      should use <a href="#prepare">manual setup</a>; the one-line installer is not a universal upgrader.</p>
+
+    <h2 id="connect">Connect from your laptop</h2>
+    <p>The default gateway binds <code>127.0.0.1:2222</code> on the server. It is intentionally not a public port.
+      Keep this administrative SSH tunnel open in one laptop terminal:</p>
+<pre class="block" tabindex="0">ssh -N -L 2222:127.0.0.1:2222 YOUR_ADMIN_USER@YOUR_SERVER</pre>
+    <p>Connect to the gateway in another terminal:</p>
+<pre class="block" tabindex="0">ssh -p 2222 dev@127.0.0.1</pre>
+    <p>Compare the gateway's host-key fingerprint with the one printed by the installer before accepting it.
+      If you chose a Tailscale listener, connect directly to that private address instead. Tailscale transports the connection;
+      your configured SSH key still authenticates the app login. You do not need a guest SSH daemon.</p>
+    <div class="callout info"><strong>One host, two SSH roles.</strong> Administrative SSH reaches your server.
+      The incus.ssh gateway reaches the management prompt and your guests. Keep the host's administrator account separate.</div>
+
+    <h2 id="quickstart">Your first environment</h2>
+    <p>Inside the management prompt, create a container and enter its root shell:</p>
+<pre class="block" tabindex="0">incus&gt; new --name=melon --memory=512MiB
+melon   Running
+incus&gt; ssh melon
+root@melon:~# uname -s
+Linux
+root@melon:~# mkdir -p project &amp;&amp; cd project
+root@melon:~/project# echo "hello, incus.ssh" &gt; hello.txt
+root@melon:~/project# cat hello.txt
+hello, incus.ssh
+root@melon:~/project# exit
+incus&gt; ls</pre>
+    <p>Use a small RAM request for this first check. A bare <code>new</code> normally defaults to 1 CPU, 2GiB RAM and
+      256 processes, capped by operator maxima and available capacity. At the host's count limit, remove a confirmed-disposable
+      environment or deliberately increase the project and gateway limits before creating another.</p>
+
+    <h2 id="environments">Create environments</h2>
+    <p>Use a named environment for a project, or omit the name for a generated fruit name. Requests select resources within
+      the operator's limits; they do not reserve or schedule dedicated hardware.</p>
+<pre class="block" tabindex="0">new --name=api --cpu=1 --memory=1GiB --processes=256
+new --image=debian-12 --name=experiment --memory=512MiB
+ls
+ls -l
+ls 'api*' --json</pre>
+    <p>The Debian example requires an operator-cached <code>debian-12</code> alias. The installer initially caches Ubuntu only.
+      An environment is an unprivileged native Incus container, not an OCI/Docker image or a hardware VM.</p>
+
+    <h2 id="shells">Shells and guest commands</h2>
+    <p><code>ssh NAME</code> opens an interactive root shell in an owned guest. Install packages and use the Linux userland
+      you chose. Exit that shell to return to the management prompt.</p>
+<pre class="block" tabindex="0">ssh melon
+ssh melon 'cat /etc/os-release'
+ssh melon 'cd /root/project &amp;&amp; ls -la'</pre>
+    <p>From your laptop, you can also run a guest command through the gateway without entering the prompt:</p>
+<pre class="block" tabindex="0">ssh -p 2222 dev@GATEWAY ssh melon 'printf "%s\n" "hello"'</pre>
+    <p>Quote the complete guest command locally when it contains pipes or shell variables. It executes through
+      <code>/bin/sh -lc</code> inside the guest. Input, output, error output and exit status pass through. A minimal image
+      without <code>/bin/sh</code> cannot run these shell commands.</p>
+
+    <h2 id="lifecycle">Stop, start and keep your files</h2>
+<pre class="block" tabindex="0">stop melon
+start melon
+restart melon
+ssh melon 'cat /root/project/hello.txt'</pre>
+    <p>The root filesystem persists. Running processes do not survive a stop/start cycle. <code>resume</code> is simply an
+      alias of <code>start</code>, not a RAM snapshot. <code>pause</code> is unsupported; freezing RAM in place is not suspend-to-disk.</p>
+    <p>Use <code>rm NAME</code> only when you intend to permanently delete that environment and all its files.
+      Guest persistence is not a backup strategy, and host-reboot recovery is not verified.</p>
+
+    <h2 id="resources">Resource limits</h2>
+    <p>The gateway limits CPU, memory and processes per guest, and the Incus project also has aggregate budgets and an
+      instance count. Raising the count alone does not create more CPU or RAM capacity.</p>
+    <ul><li>Defaults are 1 CPU, 2GiB RAM and 256 processes, capped down to the configured maxima.</li>
+      <li>Creation and starting a stopped guest must leave a 1GiB host RAM reserve and account for committed project RAM.</li>
+      <li>CPU caps are not a scheduler or a fair-share guarantee. Swap is not counted as available RAM.</li>
+      <li>The installer's directory storage pool does not enforce a disk quota. Monitor free space.</li></ul>
+    <p>See <a href="#configure">configuration</a> and <a href="#commands">the full command reference</a> for the exact fields and flags.</p>
+
+    <h2 id="files">Copy files with SCP / SFTP</h2>
+    <div class="availability">Included in v0.4.0. Real native Incus upload, download, permissions and recursive-copy checks passed.</div>
+    <p>Modern OpenSSH <code>scp</code> uses SFTP. The first path component chooses your owned environment; the rest is a path
+      inside that guest. Transfers do not require a guest SSH port or public sharing.</p>
+<pre class="block" tabindex="0">scp -P 2222 ./main.go dev@GATEWAY:melon/root/main.go
+scp -P 2222 dev@GATEWAY:melon/root/main.go ./main.go
+scp -P 2222 -r ./project dev@GATEWAY:melon/root/
+sftp -P 2222 dev@GATEWAY</pre>
+    <p>The guest must have <code>openssh-sftp-server</code> installed. On Ubuntu/Debian, install it inside that guest:</p>
+<pre class="block" tabindex="0">ssh melon 'apt-get update &amp;&amp; apt-get install -y openssh-sftp-server'</pre>
+    <p>The SFTP root lists your running environments. <code>/melon/root/main.go</code> means <code>/root/main.go</code> in
+      <code>melon</code>, never the host. Files stream without host staging. Legacy <code>scp -O</code>, rsync, append and
+      readlink/link operations are unsupported. Normal path access can follow existing guest symlinks.</p>
+
+    <h2 id="sharing">Publish one service over HTTPS <span class="preview-tag">Experimental</span></h2>
+    <div class="availability">Included in v0.4.0, disabled unless the operator configures it. The Go client and native-guest path passed
+      loopback-relay tests. Public hosted OpenTunnel API/ACME verification and long-lived renewal remain unverified.</div>
+    <p>Every machine and port starts private. An authenticated user must explicitly enable exactly one owned running
+      machine-port pair. A second port needs its own command. There is no wildcard or global publish switch.</p>
+<pre class="block" tabindex="0">share enable melon 3000
+share list
+share list melon --json
+share disable melon 3000</pre>
+    <p>The operator first has to configure the optional <code>sharing</code> capability. The guest service must listen on
+      its managed bridge NIC, not only guest loopback. The pure-Go OpenTunnel client terminates visitor TLS in the gateway
+      and forwards traffic only to that approved guest port. No direct host-port map is created.</p>
+    <p>Approval is runtime-only and bound to the container and its current boot. Lifecycle commands and gateway restarts
+      revoke it; recreated machines and guest reboots cannot inherit it. Disable closes active route connections.</p>
+    <div class="callout"><strong>A URL is not authentication.</strong> Anyone with the URL can contact the service.
+      Require application authentication. Do not trust the gateway's peer address, visitor-supplied Host or forwarding
+      headers to bypass it. Do not accidentally publish an administrative listener.</div>
+    <p><a href="https://github.com/4nkitd/incus.ssh/blob/main/docs/phase3.md">Read the complete feature boundaries and operator configuration</a>.</p>
 
     <h2 id="requirements">Requirements</h2>
     <ul>
@@ -134,7 +282,7 @@ GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
       testing needs a dedicated project and disposable container names.
     </p>
 
-    <h2 id="install">Prepare Incus</h2>
+    <h2 id="prepare">Manual setup</h2>
     <p>
       Create a dedicated project and fixed profile. The example restricts privilege, nesting, low-level configuration,
       host disk devices and proxy devices. Containers default to one CPU, 2 GiB and 256 processes, with operator maxima
@@ -250,7 +398,7 @@ sudo ./bin/incus-for-devs setup --install-incus --apply</pre>
 
     <h2 id="images">Images</h2>
     <p>
-      The v0.3.0 image catalog is read-only and local. It lists <strong>predefined native Incus Linux images</strong>
+      The image catalog is read-only and local. It lists <strong>predefined native Incus Linux images</strong>
       already cached in the configured project; it is not a registry client and never contacts an image server. The
       operator decides what is cached and approved, and the client may only choose from that set.
     </p>
@@ -368,7 +516,7 @@ sudo incus-for-devs incus -- --project= list --all-projects</pre>
           <tr><th scope="row"><code>listen</code></th><td>Loopback, a Tailscale IPv6 address, or an IPv4 address in <code>100.64.0.0/10</code>; port 1024-65535. This is a range check, not proof of tailnet membership. Wildcard and public binds are rejected.</td></tr>
           <tr><th scope="row"><code>host_key</code></th><td>Absolute path to the persistent SSH host key.</td></tr>
           <tr><th scope="row"><code>incus_binary</code></th><td>Absolute path to the Incus CLI.</td></tr>
-          <tr><th scope="row"><code>image</code>, <code>profile</code></th><td>The default cached image and the fixed profile. The profile cannot be overridden. In v0.3.0, <code>new --image</code> may select another cached image; an uncached reference is rejected. Keep this value as the cached local alias checked by setup.</td></tr>
+          <tr><th scope="row"><code>image</code>, <code>profile</code></th><td>The default cached image and the fixed profile. The profile cannot be overridden. <code>new --image</code> may select another cached image; an uncached reference is rejected. Keep this value as the cached local alias checked by setup.</td></tr>
           <tr><th scope="row"><code>limits</code></th><td>Per-container maxima for CPU, memory and processes. The defaults a client gets when it requests nothing are 1 CPU, 2GiB and 256 processes. <code>max_instances</code> counts instances in the project.</td></tr>
           <tr><th scope="row"><code>users</code></th><td>Exactly one app user: name, project and 1-16 public keys.</td></tr>
         </tbody>
@@ -519,6 +667,10 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
       implicit 2222.
     </p>
 
+    <h2 id="architecture">Architecture</h2>
+    <p>Your laptop connects to the private Go SSH gateway. A configured public key selects an app user and a fixed Incus
+      project. The gateway checks ownership, parses a narrow command grammar and calls the local Incus CLI. Guest commands
+      run inside the owned container. The Incus socket and host administrator SSH remain separate.</p>
     <h2 id="security">Security model</h2>
     <p>
       The gateway is a single trusted-user service for unprivileged development containers. It is not a multiuser
@@ -533,7 +685,7 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
       <li>The image cache is an operator approval boundary. Clients cannot pull, copy, import, alias or delete images, and the gateway has no registry credentials or image mutation command.</li>
       <li><code>incus-for-devs incus</code> is a local operator mode with full administrator authority, not an SSH management command. It is never exposed to clients or guests.</li>
       <li>Every list, shell and lifecycle request checks the container's owner label and project.</li>
-      <li>Only SSH session channels are accepted. Agent, X11, environment, TCP forwarding and subsystem requests are refused.</li>
+      <li>Only SSH session channels are accepted. Agent, X11, environment and TCP forwarding remain refused. The only allowed subsystem is authenticated, owner-scoped SFTP.</li>
       <li>CPU and memory maxima are resource limits, not scheduling guarantees. Creation and starting stopped instances check host memory. An active restart revalidates limits without charging resident memory twice. Admission is not a reservation.</li>
       <li>Swap is outside the host policy: the gateway does not configure it, count it as capacity or promise it.</li>
       <li>A directory storage pool may not enforce a disk quota. CPU and memory caps do not stop a full disk.</li>
@@ -556,10 +708,10 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
         <thead><tr><th scope="col">Capability</th><th scope="col">Status</th></tr></thead>
         <tbody>
           <tr><th scope="row"><code>pause</code>, RAM checkpoint</th><td>Unsupported. Incus freeze (operator-only) keeps RAM; stop loses process state.</td></tr>
-          <tr><th scope="row">SFTP, SCP, rsync</th><td>No file-transfer endpoint. Do not point those tools at the management port.</td></tr>
-          <tr><th scope="row">Previews, sharing</th><td>Not implemented.</td></tr>
+          <tr><th scope="row">SFTP, SCP, rsync</th><td><a href="#files">Modern SCP/SFTP is included in v0.4.0</a>; the guest needs openssh-sftp-server. Legacy SCP and rsync remain unsupported.</td></tr>
+          <tr><th scope="row">HTTPS sharing</th><td><a href="#sharing">Explicit per-machine, per-port experimental feature</a>. Opt-in only; hosted verification remains pending.</td></tr>
           <tr><th scope="row">Docker, nested containers</th><td>Not supported. The project and profile block nesting and low-level configuration.</td></tr>
-          <tr><th scope="row">OpenTunnel-style exposure</th><td>Not implemented. There is no public tunnel or per-container public hostname.</td></tr>
+          <tr><th scope="row">Direct host-port forwarding</th><td>Unsupported. HTTPS publishing does not enable SSH TCP forwarding or arbitrary host targets.</td></tr>
           <tr><th scope="row">Direct guest hostnames</th><td>Not implemented. Use <code>ssh NAME</code> through the gateway.</td></tr>
           <tr><th scope="row">OVN networks</th><td>Not supported. Setup accepts only a managed bridge network.</td></tr>
           <tr><th scope="row">Multiuser</th><td>Exactly one configured app user.</td></tr>
@@ -573,8 +725,8 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
       </table>
     </div>
     <p>
-      These are current boundaries, not promises for a later phase. Features such as pause, file transfer, previews,
-      Docker, public tunnels or multiuser admission would each need a separate design and trust-boundary review.
+      These are current boundaries, not promises of VM or managed-cloud parity. Experimental sharing is not enabled by
+      installation. Pause, Docker/nesting, direct host ports and multiuser admission remain outside the supported workflow.
     </p>
 
     <h2 id="troubleshooting">Troubleshooting</h2>
@@ -644,7 +796,7 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
   <div class="wrap">
     <div class="left">
       <strong>incus.ssh</strong><br>
-      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.3.0.
+      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.4.0.
     </div>
     <nav aria-label="Footer">
       <a href="index.html">Overview</a>
