@@ -42,22 +42,27 @@ var (
 )
 
 type Config struct {
-	Binary           string
-	Image            string
-	Profile          string
-	Limits           core.Limits
-	OperationTimeout time.Duration
+	Binary             string
+	Image              string
+	Profile            string
+	Limits             core.Limits
+	OperationTimeout   time.Duration
+	OCIRemote          string
+	OCIImages          []string
+	OCIRegistries      map[string]string
+	AdmissionDirectory string
 	// AvailableMemory reports host MemAvailable for new containers; admission
 	// keeps memoryReserve free. Nil reads /proc/meminfo.
 	AvailableMemory func() (uint64, error)
 }
 
 type Backend struct {
-	config Config
-	memory uint64
-	disk   uint64
-	env    []string
-	gate   chan struct{}
+	config        Config
+	memory        uint64
+	disk          uint64
+	runningMemory uint64
+	env           []string
+	gate          chan struct{}
 }
 
 var _ core.Backend = (*Backend)(nil)
@@ -72,8 +77,27 @@ func New(config Config) (*Backend, error) {
 	if !validSlug(config.Profile) {
 		return nil, errors.New("invalid administrator profile")
 	}
-	if config.Limits.CPU <= 0 || config.Limits.MaxInstances <= 0 {
-		return nil, errors.New("CPU and maximum instance limits must be positive")
+	if config.OCIRemote != "" && !validSlug(config.OCIRemote) {
+		return nil, errors.New("OCI remote must be a configured remote name")
+	}
+	if len(config.OCIImages) > 32 {
+		return nil, errors.New("at most 32 OCI quick-pick references can be configured")
+	}
+	if len(config.OCIRegistries) > 8 {
+		return nil, errors.New("at most eight custom OCI registries can be configured")
+	}
+	for registry, remote := range config.OCIRegistries {
+		if !validOCIRegistry(registry) || !validSlug(remote) || registry == "docker.io" {
+			return nil, errors.New("custom OCI registries require a DNS hostname and configured remote name; use oci_remote for Docker Hub")
+		}
+	}
+	for _, ref := range config.OCIImages {
+		if _, err := normalizeOCIImage(ref); err != nil {
+			return nil, errors.New("invalid OCI quick-pick image reference")
+		}
+	}
+	if config.Limits.CPU <= 0 || (config.Limits.RunningMemory == "" && config.Limits.MaxInstances <= 0) || (config.Limits.RunningMemory != "" && config.Limits.MaxInstances != 0) {
+		return nil, errors.New("positive CPU and either an inventory limit or running-only memory budget are required")
 	}
 	if config.Limits.Processes < 0 {
 		return nil, errors.New("process limit must not be negative")
@@ -107,7 +131,18 @@ func New(config Config) (*Backend, error) {
 	if home, err := os.UserHomeDir(); err == nil && filepath.IsAbs(home) && !strings.ContainsAny(home, "\x00\r\n") {
 		env = append(env, "HOME="+home)
 	}
-	return &Backend{config: config, memory: memory, disk: disk, env: env, gate: make(chan struct{}, 1)}, nil
+	var runningMemory uint64
+	if config.Limits.RunningMemory != "" {
+		runningMemory, err = parseSize(config.Limits.RunningMemory)
+		if err != nil || runningMemory < minimumRunningReservation {
+			return nil, errors.New("running_memory must be at least 256MiB")
+		}
+		config.Limits.RunningMemory = canonicalSize(config.Limits.RunningMemory)
+		if err := prepareAdmissionDirectory(config.AdmissionDirectory); err != nil {
+			return nil, err
+		}
+	}
+	return &Backend{config: config, memory: memory, disk: disk, runningMemory: runningMemory, env: env, gate: make(chan struct{}, 1)}, nil
 }
 
 func validSlug(value string) bool {
@@ -215,6 +250,10 @@ func projectMemory(items []instance, exclude string) (uint64, error) {
 }
 
 func (b *Backend) admitMemory(request string, memory, committed uint64) error {
+	memory = b.reservation(memory)
+	if b.runningMemory != 0 && (committed > b.runningMemory || memory > b.runningMemory-committed) {
+		return fmt.Errorf("running memory budget %s exceeded: %s reserved by active containers; this start needs %s (minimum 256MiB reservation)", byteSize(b.runningMemory), byteSize(committed), byteSize(memory))
+	}
 	available, err := b.config.AvailableMemory()
 	if err != nil {
 		return fmt.Errorf("cannot verify host memory availability: %w", err)
@@ -258,7 +297,7 @@ func (b *Backend) admitStart(target instance, items []instance) error {
 	if instanceActive(target.Status) {
 		return nil
 	}
-	committed, err := projectMemory(items, target.Name)
+	committed, err := b.committedMemory(items, target.Name)
 	if err != nil {
 		return err
 	}
@@ -299,6 +338,10 @@ func (b *Backend) resources(options core.CreateOptions) (core.CreateOptions, err
 		} else {
 			options.Memory = "2GiB"
 		}
+		chosen, _ := parseSize(options.Memory)
+		if b.runningMemory != 0 && chosen > b.runningMemory {
+			options.Memory = b.config.Limits.RunningMemory
+		}
 	}
 	memory, err := parseSize(options.Memory)
 	if err != nil {
@@ -330,6 +373,7 @@ type imageAlias struct {
 }
 
 type imageProperties struct {
+	Type        string `json:"type"`
 	Description string `json:"description"`
 	OS          string `json:"os"`
 	Release     string `json:"release"`
@@ -437,7 +481,7 @@ func (b *Backend) Images(ctx context.Context, principal core.Principal) ([]core.
 	}
 	result := make([]core.ImageInfo, 0, len(images))
 	for _, item := range images {
-		if item.Type != "container" || !fingerprintPattern.MatchString(item.Fingerprint) {
+		if item.Type != "container" || item.Properties.Type == "oci" || !fingerprintPattern.MatchString(item.Fingerprint) {
 			continue
 		}
 		aliases := make([]string, 0, len(item.Aliases))
@@ -509,6 +553,9 @@ func (b *Backend) resolveImage(ctx context.Context, principal core.Principal, re
 	if matches[0].Type != "container" {
 		return "", fmt.Errorf("image %q is not a container image", ref)
 	}
+	if matches[0].Properties.Type == "oci" {
+		return "", errors.New("OCI images must be deployed through the app hosting interface")
+	}
 	return strings.ToLower(matches[0].Fingerprint), nil
 }
 
@@ -530,6 +577,15 @@ func owned(item instance, principal core.Principal) bool {
 
 func (b *Backend) summary(item instance) core.Instance {
 	result := core.Instance{Name: item.Name, Status: "Unknown"}
+	if ref := item.Config[appImageKey]; ref != "" {
+		if _, err := normalizeOCIImage(ref); err == nil {
+			result.Kind, result.AppImage = "application", ref
+			result.DevelopmentBox = item.Config[developmentBoxKey] == "true"
+			if port, err := strconv.Atoi(item.Config[appPortKey]); err == nil && port > 0 && port <= 65535 && item.Config[appBootKey] == instanceBootID(item) && item.Status == "Running" {
+				result.HTTPPort = port
+			}
+		}
+	}
 	switch item.Status {
 	case "Running", "Stopped", "Frozen", "Starting", "Stopping", "Aborting", "Error", "Ready":
 		result.Status = item.Status
@@ -657,7 +713,7 @@ func (b *Backend) Create(ctx context.Context, principal core.Principal, options 
 		return core.Instance{}, err
 	}
 	defer func() { <-b.gate }()
-	items, err := b.list(ctx, principal)
+	items, err := b.admissionInstances(ctx, principal)
 	if err != nil {
 		return core.Instance{}, err
 	}
@@ -665,7 +721,7 @@ func (b *Backend) Create(ctx context.Context, principal core.Principal, options 
 	// The local gate serializes only this backend: external incus commands and
 	// other backend processes are not serialized, so deploy/project.yaml must
 	// enforce the same project limits.
-	if len(items) >= b.config.Limits.MaxInstances {
+	if b.runningMemory == 0 && len(items) >= b.config.Limits.MaxInstances {
 		return core.Instance{}, errors.New("project instance limit reached")
 	}
 	taken := make(map[string]bool, len(items))
@@ -684,7 +740,7 @@ func (b *Backend) Create(ctx context.Context, principal core.Principal, options 
 	if err != nil {
 		return core.Instance{}, errors.New("invalid memory request")
 	}
-	committed, err := projectMemory(items, "")
+	committed, err := b.committedMemory(items, "")
 	if err != nil {
 		return core.Instance{}, err
 	}
@@ -714,8 +770,16 @@ func (b *Backend) Create(ctx context.Context, principal core.Principal, options 
 	if options.Disk != "" {
 		args = append(args, "--device", "root,size="+options.Disk)
 	}
+	if b.runningMemory != 0 {
+		args[0] = "init"
+	}
 	if _, err := b.run(ctx, principal, args...); err != nil {
 		return core.Instance{}, err
+	}
+	if b.runningMemory != 0 {
+		if err := b.startCreated(ctx, principal, options.Name); err != nil {
+			return core.Instance{}, err
+		}
 	}
 	result := core.Instance{Name: options.Name, Status: "Running", CPU: strconv.Itoa(options.CPU), Memory: options.Memory, Processes: strconv.Itoa(options.Processes), Disk: options.Disk}
 	if options.Image != "" {
@@ -784,7 +848,13 @@ func (b *Backend) lifecycle(ctx context.Context, principal core.Principal, name,
 		return err
 	}
 	defer func() { <-b.gate }()
-	items, err := b.list(ctx, principal)
+	var items []instance
+	var err error
+	if action == "start" || action == "restart" {
+		items, err = b.admissionInstances(ctx, principal)
+	} else {
+		items, err = b.list(ctx, principal)
+	}
 	if err != nil {
 		return err
 	}
@@ -804,6 +874,21 @@ func (b *Backend) lifecycle(ctx context.Context, principal core.Principal, name,
 		if err := b.admitStart(target, items); err != nil {
 			return err
 		}
+	}
+	if b.runningMemory != 0 && (action == "start" || action == "restart") {
+		if action == "start" && target.Status == "Running" {
+			return nil
+		}
+		if action == "start" && target.Status == "Frozen" {
+			action = "unfreeze"
+		}
+		if action == "start" && instanceActive(target.Status) {
+			return core.UserError{Message: "The container is active or changing state; wait for it to settle."}
+		}
+		if target.Status == "Stopped" {
+			action = "start"
+		}
+		return b.trackedStart(ctx, principal, name, action)
 	}
 	_, err = b.run(ctx, principal, append([]string{action, name}, flags...)...)
 	return err
@@ -853,7 +938,14 @@ func (b *boundedBuffer) Write(data []byte) (int, error) {
 }
 
 func (b *Backend) run(ctx context.Context, principal core.Principal, args ...string) ([]byte, error) {
+	return b.runInput(ctx, principal, nil, args...)
+}
+
+func (b *Backend) runInput(ctx context.Context, principal core.Principal, input []byte, args ...string) ([]byte, error) {
 	cmd := b.command(ctx, principal, args...)
+	if input != nil {
+		cmd.Stdin = strings.NewReader(string(input))
+	}
 	stdout := &boundedBuffer{limit: 4 << 20}
 	stderr := &boundedBuffer{limit: 8 << 10}
 	cmd.Stdout, cmd.Stderr = stdout, stderr

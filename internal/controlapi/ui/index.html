@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Your apps · incus.ssh</title>
+  <link rel="stylesheet" href="/ui/pico.min.css">
+  <link rel="stylesheet" href="/ui/app.css">
+  <script src="/ui/app.js" defer></script>
+</head>
+<body>
+  <div id="notifications" class="toast-stack" popover="manual" role="status" aria-live="polite" aria-relevant="additions" aria-label="Notifications" hidden></div>
+  <main id="login" class="login-page">
+    <section class="welcome">
+      <a class="wordmark" href="/ui"><span class="brand-mark" aria-hidden="true">i</span>incus.ssh</a>
+      <h1>Your server.<br>Your apps.</h1>
+      <p>A place to run your apps, see what they’re doing, and keep them under your control.</p>
+      <div class="welcome-note">Start small. Your apps keep their files when you stop or restart them.</div>
+    </section>
+    <article class="login-card">
+      <h2>Connect to your server</h2>
+      <p>Enter the access token provided by your server operator.</p>
+      <form id="login-form">
+        <label for="token">Access token</label>
+        <input id="token" name="token" type="password" autocomplete="current-password" required spellcheck="false" placeholder="Paste your access token">
+        <button class="full" type="submit">Connect</button>
+      </form>
+      <p class="fine-print">Your token stays in this tab’s memory. Refreshing or signing out clears it. It is never saved in browser storage.</p>
+      <p id="login-error" class="error-text" role="alert"></p>
+    </article>
+  </main>
+
+  <div id="workspace" class="workbench" hidden>
+    <aside class="workspace-nav">
+      <a id="nav-apps" class="wordmark" href="#services"><span class="brand-mark" aria-hidden="true">i</span>incus.ssh</a>
+      <div class="project-switch"><span class="project-icon" aria-hidden="true">◇</span><div><small>Current project</small><strong id="project-name">Your workspace</strong></div></div>
+      <nav aria-label="Workspace navigation">
+        <button id="nav-services" class="nav-item active" data-icon="grid">Services</button>
+        <button id="nav-activity" class="nav-item" data-icon="clock">Activity</button>
+        <button id="nav-server" class="nav-item" data-icon="server">Server &amp; registries</button>
+      </nav>
+      <div class="sidebar-note"><strong>Private by default</strong><p>Publish HTTP ports explicitly. App hostnames stay separate from this panel.</p></div>
+      <div class="nav-bottom"><span class="connection-dot"></span><span id="server-name">Connected</span><button id="theme-toggle" class="quiet" data-icon="theme" aria-label="Toggle color theme"></button></div>
+    </aside>
+    <div class="workspace-main">
+      <header class="workspace-topbar"><div class="breadcrumbs"><span>Workspace</span><span aria-hidden="true">/</span><strong id="breadcrumb-project">Project</strong><span id="breadcrumb-service"></span></div><div class="account-controls"><span id="identity" class="account-name"></span><button id="logout" class="quiet">Sign out</button></div></header>
+      <main class="content">
+        <p id="preview-banner" class="preview-notice" hidden>Interactive preview. All services, metrics and activity on this page are sample data.</p>
+        <section id="services-view">
+          <header class="page-header"><div><h1>Services</h1><p>Containers and app services in this project.</p></div><button id="deploy" class="primary" data-icon="plus">New service</button></header>
+          <div id="notice" class="notice" hidden></div>
+          <div class="inventory-summary"><div><span>Services</span><strong id="count-total">0</strong></div><div><span><i class="connection-dot"></i> Running</span><strong id="count-running">0</strong></div><div><span>Stopped</span><strong id="count-stopped">0</strong></div><div><span id="capacity-label">Project capacity</span><strong id="project-capacity">—</strong></div></div>
+          <div class="services-panel"><div class="list-toolbar"><label class="search-field"><span class="sr-only">Search apps</span><input id="search" type="search" placeholder="Search services or images" autocomplete="off"></label><label><span class="sr-only">Filter by state</span><select id="filter"><option value="all">All states</option><option value="Running">Running</option><option value="Stopped">Stopped</option></select></label><button id="refresh" class="secondary outline" aria-label="Refresh apps">Refresh</button></div>
+          <div id="app-list" aria-label="Your services" tabindex="0"></div>
+          <div id="empty" class="empty" hidden><span class="empty-icon" aria-hidden="true">+</span><h2>Your first service starts here</h2><p>Use an image from Docker Hub or a configured OCI registry. No host setup required.</p><button id="empty-deploy">Create a service</button></div>
+          <p id="no-results" class="empty" hidden>No services match this search.</p></div>
+          <section class="recent-panel"><div class="section-heading"><div><h2>Recent activity</h2><p>Panel, REST and MCP actions. Commands and secrets are never included.</p></div><button id="view-activity" class="quiet">View all activity</button></div><div id="recent-activity"></div></section>
+        </section>
+        <section id="service-view" hidden><button id="back-services" class="quiet back-button" data-icon="arrow-left">All services</button><section id="detail" aria-label="Service workspace"></section></section>
+        <section id="activity-view" hidden><header class="page-header"><div><h1>Activity</h1><p>The latest 200 panel, REST and MCP actions in this project.</p></div><button id="refresh-activity" class="secondary outline">Refresh</button></header><div id="activity-list" class="services-panel"></div></section>
+        <footer class="page-footer"><span id="last-updated">Not refreshed yet</span><span>Incus containers. Your hardware. Your data.</span></footer>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="deploy-dialog" class="large-dialog" aria-labelledby="deploy-title"><article>
+    <form id="deploy-form" novalidate>
+      <header class="dialog-header"><div><h2 id="deploy-title" tabindex="-1">Choose your app</h2><p id="deploy-description">Bring an image from Docker Hub or an approved OCI registry.</p></div><button type="button" class="icon-close" data-close="deploy-dialog" aria-label="Close deployment form">×</button></header>
+      <ol class="steps" aria-label="Deployment steps"><li data-step-label="1" aria-current="step"><span>1</span>Choose</li><li data-step-label="2"><span>2</span>Configure</li><li data-step-label="3"><span>3</span>Review</li></ol>
+      <div class="form-body">
+        <section data-deploy-step="1"><label>Container image<input name="image" type="text" maxlength="512" placeholder="nginx:alpine or ghcr.io/team/app:tag" autocomplete="off" spellcheck="false"><small>Image references and HTTPS registry URLs are accepted. Use a digest to pin an exact image.</small></label><p id="registry-hint" class="fine-print"></p><h3 id="quick-picks-title" class="quick-picks-title">Quick picks</h3><div id="image-catalog" class="image-catalog"></div><label class="box-option"><input name="development_box" type="checkbox"> Keep running as a development box</label><small>Replaces the image’s startup command with a keepalive process. The image must provide /bin/sh and sleep. Choose this for shell-based Linux and language environments.</small><p class="fine-print catalog-note">Images must allow anonymous pulls. Registry hosts require operator approval; individual images do not. No archive downloads, Dockerfiles or Docker Compose in this version.</p></section>
+        <section data-deploy-step="2" hidden>
+          <label>App name<input name="name" required pattern="[a-z]([a-z0-9\-]{0,61}[a-z0-9])?" maxlength="63" placeholder="my-website" autocomplete="off"><small>Make it something you’ll recognize. Use lowercase letters, numbers and hyphens.</small></label>
+          <details class="advanced-settings"><summary>Environment variables <small>Optional</small></summary><p>Settings required by your image, such as a database password. One <code>NAME=value</code> per line.</p><label><span class="sr-only">Environment variables</span><textarea name="environment" rows="4" spellcheck="false" autocomplete="off" placeholder="APP_ENV=production"></textarea></label><small>Stored in the app’s Incus configuration. Server administrators can read these values.</small></details>
+          <details class="advanced-settings"><summary>Resources <small id="resource-defaults">1 CPU / 512 MiB</small></summary><div class="field-pair"><label>CPUs<input name="cpu" type="number" min="1" value="1" required></label><label>Memory<select name="memory"><option value="256MiB">256 MiB</option><option value="512MiB" selected>512 MiB</option><option value="1GiB">1 GiB</option><option value="2GiB">2 GiB</option><option value="4GiB">4 GiB</option></select></label></div><small>These are limits, not usage. Your server’s capacity rules still apply.</small></details>
+        </section>
+        <section data-deploy-step="3" hidden>
+          <dl id="deploy-review" class="review-list"></dl>
+          <div class="data-note"><strong>Private first. Publish when you’re ready.</strong><p>After creation, you can give an HTTP app its own address from the Sharing tab. Nothing is published automatically.</p></div>
+          <p class="fine-print">Files survive stop and restart. Deleting an app deletes its files. This version does not create backups or external storage volumes.</p>
+        </section>
+        <p id="deploy-error" class="error-text" role="alert"></p>
+      </div>
+      <footer class="dialog-footer"><button id="deploy-back" type="button" class="secondary outline" hidden>Back</button><button id="deploy-next" type="button">Continue</button><button id="deploy-submit" type="submit" hidden>Create app</button></footer>
+    </form>
+  </article></dialog>
+
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title"><article><form id="confirm-form"><header class="dialog-header"><h2 id="confirm-title"></h2><button type="button" class="icon-close" data-close="confirm-dialog" aria-label="Cancel action">×</button></header><div class="form-body"><p id="confirm-description"></p><label id="delete-label" hidden>Type the app name to confirm<input id="delete-name" autocomplete="off" spellcheck="false"></label><p id="confirm-error" class="error-text" role="alert"></p></div><footer class="dialog-footer"><button type="button" class="secondary outline" data-close="confirm-dialog">Cancel</button><button id="confirm-action" type="submit" class="danger"></button></footer></form></article></dialog>
+
+  <dialog id="server-dialog" aria-labelledby="server-title"><article><header class="dialog-header"><h2 id="server-title">Your server</h2><button class="icon-close" data-close="server-dialog" aria-label="Close server details">×</button></header><div id="server-detail" class="form-body"></div></article></dialog>
+</body>
+</html>

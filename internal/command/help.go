@@ -17,6 +17,7 @@ type helpCommand struct {
 var commands = []helpCommand{
 	{"help", "help [all|COMMAND] [--json]", "Show this command reference. Alias: ?."},
 	{"whoami", "whoami [--json]", "Show the authenticated application user and Incus project."},
+	{"api", "api enable|disable|rotate|status [--json]", "Enable REST and HTTP MCP access, rotate the shared bearer token, disable access, or show endpoints. Enable and rotate show a new token once. The token grants container lifecycle and guest shell access. Requires operator API/HTTPS setup. Disable and rotate revoke the old token and cancel its active requests."},
 	{"new", "new [--name=NAME] [--image=REF] [--cpu=N] [--memory=SIZE] [--processes=N] [--disk=SIZE] [--json]", "Create an owned container. Omitted resources default to 1 CPU, 2GiB memory and 256 processes, each capped down by the operator maxima. Creation must also leave a 1GiB host memory reserve. Sizes use an integer and B, kB, KB, MB, GB, TB, KiB, MiB, GiB or TiB. --image selects an administrator-cached image; omitted, the administrator default applies. REF is an alias or fingerprint from image list, optionally prefixed with local:."},
 	{"ls", "ls [-l] [--json] [name-or-glob]", "List owned containers. -l adds known CPU, memory, process and disk limits. JSON summaries include the image when known."},
 	{"image", "image list [--json]", "List administrator-cached images available to new containers. Read-only: pulling, importing, removing and other image cache changes are administrator work on the host."},
@@ -39,6 +40,7 @@ var helpParagraphs = []string{
 	"incus-for-devs: an exe.dev-compatible management command subset for trusted Incus development containers.",
 	"This is not full exe.dev or VM parity. Operator limits are per-container maxima, not defaults, and do not schedule or isolate VMs. Administrator setup runs locally on the host, not through this gateway.",
 	"Management flags may follow positional arguments. Instance names use 1-63 lowercase letters, digits or hyphens, start with a letter and end with a letter or digit.",
+	"With an operator running_memory budget, only active containers reserve capacity; stopped containers keep their files without reserving RAM. Legacy max_instances configurations retain inventory limits.",
 }
 
 func helpDescription() string {

@@ -61,8 +61,8 @@ func TestSSHColorJSONStaysRaw(t *testing.T) {
 		} `json:"commands"`
 	}
 	assertRawJSON(t, runPTY(t, client, "help --json", nil, 0).out, &help)
-	if len(help.Commands) != 13 {
-		t.Fatalf("help JSON lists %d commands, want 13 including image, share and clear: %+v", len(help.Commands), help.Commands)
+	if len(help.Commands) != 14 {
+		t.Fatalf("help JSON lists %d commands, want 14 including api, image, share and clear: %+v", len(help.Commands), help.Commands)
 	}
 	found, hasClear, hasImage := false, false, false
 	for _, command := range help.Commands {

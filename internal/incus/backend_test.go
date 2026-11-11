@@ -30,16 +30,17 @@ import (
 var alice = core.Principal{Name: "alice", Project: "developers"}
 
 type scenario struct {
-	Block              string
-	Child              bool
-	Exit               int
-	Failure            string
-	Stdout             []byte
-	Stderr             []byte
-	Echo               bool
-	LargeOutput        int
-	LaunchDelay        time.Duration
-	WaitForExecRelease bool
+	Block               string
+	Child               bool
+	Exit                int
+	Failure             string
+	Stdout              []byte
+	Stderr              []byte
+	Echo                bool
+	LargeOutput         int
+	LaunchDelay         time.Duration
+	WaitForExecRelease  bool
+	WaitForStartRelease bool
 }
 
 type fakeImageAlias struct {
@@ -151,8 +152,8 @@ func TestIncusHelper(t *testing.T) {
 	}
 	dir, args := args[0], args[1:]
 	actualArgs := args
-	if len(args) == 4 && reflect.DeepEqual(args[:3], []string{"--force-local", "--quiet", "query"}) {
-		if args[3] != "/1.0/networks/incusbr0?project="+alice.Project {
+	if len(args) >= 4 && reflect.DeepEqual(args[:3], []string{"--force-local", "--quiet", "query"}) {
+		if args[3] != "/1.0/networks/incusbr0?project="+alice.Project && !strings.HasPrefix(args[3], "/1.0/instances/") && !strings.HasPrefix(args[3], "/1.0/operations/") {
 			os.Exit(92)
 		}
 		args = append([]string{"--force-local", "--project", alice.Project, "--quiet"}, args[2:]...)
@@ -214,7 +215,52 @@ func TestIncusHelper(t *testing.T) {
 	data, _ = os.ReadFile(filepath.Join(dir, "instances.json"))
 	_ = json.Unmarshal(data, &items)
 	switch action {
+	case "operation":
+		if !reflect.DeepEqual(args[5:], []string{"list", "--format=json"}) {
+			os.Exit(98)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, "operations.json"))
+		if os.IsNotExist(err) {
+			data = []byte("[]")
+		} else if err != nil {
+			os.Exit(98)
+		}
+		_, _ = os.Stdout.Write(data)
 	case "query":
+		if strings.HasPrefix(args[5], "/1.0/instances/") {
+			if behavior.WaitForStartRelease {
+				_ = os.WriteFile(filepath.Join(dir, "start.ready"), []byte("ready"), 0600)
+				for {
+					if _, err := os.Stat(filepath.Join(dir, "start.release")); err == nil {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			}
+			name := strings.Split(strings.TrimPrefix(args[5], "/1.0/instances/"), "/")[0]
+			if len(args) != 11 || !reflect.DeepEqual(args[6:9], []string{"--request", "PUT", "--data"}) || args[10] != "--raw" {
+				os.Exit(98)
+			}
+			var state struct {
+				Action string `json:"action"`
+			}
+			if json.Unmarshal([]byte(args[9]), &state) != nil || (state.Action != "start" && state.Action != "restart" && state.Action != "unfreeze") {
+				os.Exit(98)
+			}
+			for i := range items {
+				if items[i].Name == name {
+					items[i].Status = "Running"
+				}
+			}
+			data, _ := json.Marshal(items)
+			_ = os.WriteFile(filepath.Join(dir, "instances.json"), data, 0600)
+			_, _ = io.WriteString(os.Stdout, `{"operation":"/1.0/operations/11111111-1111-1111-1111-111111111111"}`)
+			break
+		}
+		if strings.HasPrefix(args[5], "/1.0/operations/") {
+			_, _ = io.WriteString(os.Stdout, `{"status_code":200}`)
+			break
+		}
 		data, err := os.ReadFile(filepath.Join(dir, "network.json"))
 		if err != nil {
 			os.Exit(98)
@@ -242,9 +288,12 @@ func TestIncusHelper(t *testing.T) {
 			images = []fakeImage{}
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(images)
-	case "launch":
+	case "launch", "init":
 		time.Sleep(behavior.LaunchDelay)
 		item := ownedInstance(args[6], alice.Name)
+		if action == "init" {
+			item.Status = "Stopped"
+		}
 		for i := 7; i+1 < len(args); i++ {
 			if args[i] == "--config" {
 				parts := strings.SplitN(args[i+1], "=", 2)

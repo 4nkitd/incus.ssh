@@ -72,6 +72,26 @@ func TestExecDefaultShellAndMinimalEnvironment(t *testing.T) {
 	}
 }
 
+func TestApplicationExecPreservesImageEnvironment(t *testing.T) {
+	for _, command := range []string{"", "go version"} {
+		item := ownedInstance("app", "alice")
+		item.Config[appImageKey] = "docker.io/library/golang:latest"
+		f := newFixture(t, []instance{item}, scenario{})
+		if code, err := f.backend.Exec(context.Background(), alice, "app", command, core.Streams{}); err != nil || code != 0 {
+			t.Fatal(code, err)
+		}
+		calls := f.calls(t)
+		args := calls[len(calls)-1]
+		want := []string{"--", "/bin/sh"}
+		if command != "" {
+			want = append(want, "-c", command)
+		}
+		if !reflect.DeepEqual(args[len(args)-len(want):], want) {
+			t.Fatalf("application used a login shell: %v", args)
+		}
+	}
+}
+
 func TestExecDoesNotWaitForInputEOFToReportExit(t *testing.T) {
 	f := newFixture(t, []instance{ownedInstance("mine", "alice")}, scenario{Exit: 23})
 	reader, writer := io.Pipe()

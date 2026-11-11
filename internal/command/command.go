@@ -31,6 +31,7 @@ type Handler struct {
 	Limits  core.Limits
 	Sharing core.Sharing
 	Files   core.FileBackend
+	API     core.APIAccess
 }
 
 var _ core.Handler = (*Handler)(nil)
@@ -92,6 +93,8 @@ func (h Handler) Handle(ctx context.Context, p core.Principal, line string, s co
 		return clearScreen(s)
 	case "share":
 		return h.share(ctx, p, r, s)
+	case "api":
+		return h.api(p, r, s)
 	}
 	if h.Backend == nil {
 		return failure(s, r.json, errors.New("backend is not configured"))
@@ -460,6 +463,10 @@ func parse(line string) (request, error) {
 		if err := validateShareArgs(r.args); err != nil {
 			return r, err
 		}
+	case "api":
+		if len(r.args) != 1 || (r.args[0] != "enable" && r.args[0] != "disable" && r.args[0] != "rotate" && r.args[0] != "status") {
+			return r, errors.New("usage: api enable|disable|rotate|status [--json]")
+		}
 	}
 	return r, nil
 }
@@ -558,7 +565,7 @@ func validImageRef(value string) error {
 
 func unsupported(command string) error {
 	switch command {
-	case "help", "?", "whoami", "new", "ls", "image", "share", "clear", "rm", "resume", "start", "stop", "restart", "ssh":
+	case "help", "?", "whoami", "api", "new", "ls", "image", "share", "clear", "rm", "resume", "start", "stop", "restart", "ssh":
 		return nil
 	case "pause":
 		return errors.New("pause is unsupported: Incus containers cannot promise exe.dev RAM-to-disk suspend; stop and freeze are not substitutes")

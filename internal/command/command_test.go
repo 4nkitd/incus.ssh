@@ -601,12 +601,12 @@ func TestHelpListsExactlySupportedCommands(t *testing.T) {
 			t.Fatalf("help lists unsupported %s: %v", name, err)
 		}
 	}
-	for _, name := range []string{"help", "whoami", "new", "ls", "image", "share", "clear", "rm", "start", "stop", "restart", "resume", "ssh"} {
+	for _, name := range []string{"help", "whoami", "api", "new", "ls", "image", "share", "clear", "rm", "start", "stop", "restart", "resume", "ssh"} {
 		if !listed[name] {
 			t.Fatalf("help omits %s: %v", name, listed)
 		}
 	}
-	if len(listed) != 13 {
+	if len(listed) != 14 {
 		t.Fatalf("help lists unexpected commands: %v", listed)
 	}
 	flat := flattened(object["description"].(string))

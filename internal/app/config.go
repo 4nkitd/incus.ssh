@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 
+	"incus-for-devs/internal/controlapi"
 	"incus-for-devs/internal/core"
 )
 
@@ -22,16 +23,20 @@ type User struct {
 }
 
 type Config struct {
-	Listen                  string      `json:"listen"`
-	HostKey                 string      `json:"host_key"`
-	IncusBinary             string      `json:"incus_binary"`
-	Image                   string      `json:"image"`
-	Profile                 string      `json:"profile"`
-	OperationTimeoutSeconds int         `json:"operation_timeout_seconds"`
-	MaxSessions             int         `json:"max_sessions"`
-	Limits                  core.Limits `json:"limits"`
-	Users                   []User      `json:"users"`
-	Sharing                 *Sharing    `json:"sharing,omitempty"`
+	Listen                  string             `json:"listen"`
+	HostKey                 string             `json:"host_key"`
+	IncusBinary             string             `json:"incus_binary"`
+	Image                   string             `json:"image"`
+	Profile                 string             `json:"profile"`
+	OperationTimeoutSeconds int                `json:"operation_timeout_seconds"`
+	MaxSessions             int                `json:"max_sessions"`
+	Limits                  core.Limits        `json:"limits"`
+	Users                   []User             `json:"users"`
+	Sharing                 *Sharing           `json:"sharing,omitempty"`
+	API                     *controlapi.Config `json:"api,omitempty"`
+	OCIRemote               string             `json:"oci_remote,omitempty"`
+	OCIImages               []string           `json:"oci_images,omitempty"`
+	OCIRegistries           map[string]string  `json:"oci_registries,omitempty"`
 }
 
 type Sharing struct {
@@ -94,8 +99,11 @@ func (c *Config) Validate() error {
 	if c.MaxSessions < 1 || c.MaxSessions > 64 {
 		return errors.New("max_sessions must be between 1 and 64")
 	}
-	if c.Limits.MaxInstances < 1 || c.Limits.CPU < 1 || c.Limits.Memory == "" {
-		return errors.New("positive instance/CPU limits and a memory limit are required")
+	if c.Limits.CPU < 1 || c.Limits.Memory == "" {
+		return errors.New("a positive CPU limit and a memory limit are required")
+	}
+	if (c.Limits.RunningMemory == "" && c.Limits.MaxInstances < 1) || (c.Limits.RunningMemory != "" && c.Limits.MaxInstances != 0) {
+		return errors.New("set a positive max_instances for legacy inventory limits, or max_instances=0 with running_memory for running-only admission")
 	}
 	if c.Limits.Processes < 0 {
 		return errors.New("process limit must not be negative")
@@ -114,6 +122,17 @@ func (c *Config) Validate() error {
 		if !filepath.IsAbs(c.Sharing.StateDirectory) || filepath.Clean(c.Sharing.StateDirectory) != c.Sharing.StateDirectory || c.Sharing.StateDirectory == "/" {
 			return errors.New("sharing.state_directory must be an absolute private state directory")
 		}
+	}
+	if c.API != nil {
+		if err := c.API.Validate(); err != nil {
+			return err
+		}
+		if c.API.Listen == c.Listen {
+			return errors.New("API and SSH listeners must use different addresses")
+		}
+	}
+	if c.OCIRemote != "" && !slug.MatchString(c.OCIRemote) {
+		return errors.New("oci_remote must be a configured Incus remote name")
 	}
 	// Admission is per-project until a global resource allocator is implemented.
 	if len(c.Users) != 1 {

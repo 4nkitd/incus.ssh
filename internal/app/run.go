@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -23,6 +24,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"incus-for-devs/internal/command"
+	"incus-for-devs/internal/controlapi"
 	"incus-for-devs/internal/core"
 	"incus-for-devs/internal/gateway"
 	"incus-for-devs/internal/incus"
@@ -42,6 +44,8 @@ func Run(args []string) error {
 			return keygen(args[1:])
 		case "setup":
 			return setup.Run(args[1:])
+		case "setup-api":
+			return setupAPI(args[1:])
 		case "incus":
 			return operator.Run(args[1:])
 		case "version", "--version":
@@ -91,6 +95,10 @@ func serve(args []string) error {
 	backend, err := incus.New(incus.Config{
 		Binary: cfg.IncusBinary, Image: cfg.Image, Profile: cfg.Profile,
 		Limits: limits, OperationTimeout: time.Duration(cfg.OperationTimeoutSeconds) * time.Second,
+		OCIRemote:          cfg.OCIRemote,
+		OCIImages:          cfg.OCIImages,
+		OCIRegistries:      cfg.OCIRegistries,
+		AdmissionDirectory: filepath.Join(filepath.Dir(cfg.HostKey), "admission"),
 	})
 	if err != nil {
 		return err
@@ -114,6 +122,46 @@ func serve(args []string) error {
 		manager := sharing.New(ctx, backend, sharing.Options{API: cfg.Sharing.API, Directory: cfg.Sharing.StateDirectory})
 		defer manager.Close()
 		handler.Sharing = manager
+	}
+	if cfg.API != nil {
+		tokens, err := controlapi.OpenTokens(cfg.API.StateDirectory, cfg.API.Origin, users[0].Principal)
+		if err != nil {
+			return err
+		}
+		defer tokens.Close()
+		handler.API = tokens
+		apiListener, err := net.Listen("tcp", cfg.API.Listen)
+		if err != nil {
+			return err
+		}
+		defer apiListener.Close()
+		timeout := time.Duration(cfg.OperationTimeoutSeconds) * time.Second
+		server := &http.Server{
+			Handler:           controlapi.NewHandler(tokens, backend, handler.Sharing, timeout, cfg.MaxSessions, Version, cfg.API.ApplicationsDomain),
+			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,
+			WriteTimeout: timeout + 10*time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10,
+			BaseContext: func(net.Listener) context.Context { return ctx },
+		}
+		defer server.Close()
+		results := make(chan error, 2)
+		go func() { results <- server.Serve(apiListener) }()
+		go func() {
+			results <- gateway.Serve(ctx, listener, gateway.Config{HostKeyPath: cfg.HostKey, Users: users, MaxSessions: cfg.MaxSessions, Handler: handler})
+		}()
+		fmt.Fprintln(os.Stderr, "REST/MCP listener on", apiListener.Addr(), "for", cfg.API.Origin, "(token required)")
+		var serveErr error
+		select {
+		case serveErr = <-results:
+		case <-ctx.Done():
+		}
+		cancel()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		_ = server.Shutdown(shutdownCtx)
+		if errors.Is(serveErr, http.ErrServerClosed) || errors.Is(serveErr, context.Canceled) {
+			return nil
+		}
+		return serveErr
 	}
 	return gateway.Serve(ctx, listener, gateway.Config{
 		HostKeyPath: cfg.HostKey, Users: users, MaxSessions: cfg.MaxSessions,
@@ -223,6 +271,7 @@ const localHelp = `incus.ssh: a private SSH gateway for trusted Linux containers
   incus-for-devs keygen --path /var/lib/incus-for-devs/host.key
   incus-for-devs setup --help
   incus-for-devs setup --install-incus [--apply]
+  incus-for-devs setup-api --domain api.example.com [--apply]
   sudo incus-for-devs incus -- list
   incus-for-devs version
   incus-for-devs [client] --target user@host --port 2222 help

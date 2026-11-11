@@ -20,6 +20,12 @@ import (
 var termPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9+._-]{0,63}$`)
 
 func (b *Backend) Exec(ctx context.Context, principal core.Principal, name, command string, streams core.Streams) (int, error) {
+	if err := validatePrincipal(principal); err != nil {
+		return -1, err
+	}
+	if !validName(name) {
+		return -1, errors.New("invalid instance name")
+	}
 	checkCtx, cancel := context.WithTimeout(ctx, b.config.OperationTimeout)
 	if err := b.lock(checkCtx); err != nil {
 		cancel()
@@ -33,7 +39,11 @@ func (b *Backend) Exec(ctx context.Context, principal core.Principal, name, comm
 		}
 	}
 	defer unlock()
-	err := b.checkOwner(checkCtx, principal, name)
+	items, err := b.list(checkCtx, principal)
+	var target instance
+	if err == nil {
+		target, err = findOwned(items, principal, name)
+	}
 	cancel()
 	if err != nil {
 		return -1, err
@@ -53,7 +63,12 @@ func (b *Backend) Exec(ctx context.Context, principal core.Principal, name, comm
 		term = streams.Term
 	}
 	args = append(args, "--env", "TERM="+term, "--", "/bin/sh")
-	if command == "" {
+	if target.Config[appImageKey] != "" {
+		// Login profiles can erase image PATH entries, including the Go toolchain.
+		if command != "" {
+			args = append(args, "-c", command)
+		}
+	} else if command == "" {
 		args = append(args, "-l")
 	} else {
 		args = append(args, "-lc", command)

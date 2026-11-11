@@ -44,13 +44,17 @@ type CreateOptions struct {
 }
 
 type Instance struct {
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	CPU       string `json:"cpu,omitempty"`
-	Memory    string `json:"memory,omitempty"`
-	Processes string `json:"processes,omitempty"`
-	Disk      string `json:"disk,omitempty"`
-	Image     string `json:"image,omitempty"`
+	Name           string `json:"name"`
+	Status         string `json:"status"`
+	CPU            string `json:"cpu,omitempty"`
+	Memory         string `json:"memory,omitempty"`
+	Processes      string `json:"processes,omitempty"`
+	Disk           string `json:"disk,omitempty"`
+	Image          string `json:"image,omitempty"`
+	Kind           string `json:"kind,omitempty"`
+	AppImage       string `json:"app_image,omitempty"`
+	HTTPPort       int    `json:"http_port,omitempty"`
+	DevelopmentBox bool   `json:"development_box,omitempty"`
 }
 
 type ImageInfo struct {
@@ -76,6 +80,17 @@ type Backend interface {
 
 type Handler interface {
 	Handle(context.Context, Principal, string, Streams) int
+}
+
+type APIStatus struct {
+	Enabled bool   `json:"enabled"`
+	REST    string `json:"rest_url"`
+	MCP     string `json:"mcp_url"`
+	Token   string `json:"token,omitempty"`
+}
+
+type APIAccess interface {
+	Manage(Principal, string) (APIStatus, error)
 }
 
 type SubsystemHandler interface {
@@ -108,9 +123,10 @@ type Sharing interface {
 }
 
 type Limits struct {
-	MaxInstances int    `json:"max_instances"`
-	CPU          int    `json:"cpu"`
-	Memory       string `json:"memory"`
-	Processes    int    `json:"processes,omitempty"`
-	Disk         string `json:"disk,omitempty"`
+	MaxInstances  int    `json:"max_instances"`
+	RunningMemory string `json:"running_memory,omitempty"`
+	CPU           int    `json:"cpu"`
+	Memory        string `json:"memory"`
+	Processes     int    `json:"processes,omitempty"`
+	Disk          string `json:"disk,omitempty"`
 }
