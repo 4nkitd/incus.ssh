@@ -2,6 +2,19 @@
 
 Notable changes to incus.ssh.
 
+## v0.5.0 - 2026-11-11
+
+- Token-protected REST and Streamable HTTP MCP for owned container lifecycle and guest commands. Access is opt-in through authenticated SSH; enable/rotate generate a token once, store only its hash, and revoke old requests immediately.
+- Embedded `/ui` hosting panel with compact service workspaces, light/dark themes, guided deployment, SVG action icons and success/error/warning toasts. Includes runtime counters, redacted environment management, bounded logs, noninteractive guest commands and private persisted API activity.
+- Native OCI application deployment from Docker Hub and operator-configured public HTTPS registries. Free-form image references and HTTPS registry URLs are accepted; private registry credentials, arbitrary archive URLs and Docker Compose are not supported.
+- Kali rolling, Alpine Linux, Go, PHP CLI and Python development-box presets. A fixed guest keepalive replaces the image startup command when requested. OCI shells preserve their image PATH; native system containers keep login-shell behavior.
+- Explicit, separate-origin HTTP publishing behind an operator-managed application domain. Publishing checks ownership, boot identity and private bridge leases; a new boot requires fresh consent. No arbitrary host targets, host mounts, privileged fallback or Docker socket exposure.
+- Opt-in dynamic running-only admission using `limits.running_memory` with `max_instances: 0`. Only active or uncertain states reserve memory; stopped containers retain storage without consuming running capacity. Starts and creates are serialized, restarts are not double-charged, and a 1-GiB host reserve remains. Tiny allocations reserve at least 256 MiB for admission safety. Legacy inventory limits remain supported.
+- Integrated, plan-first Caddy setup for fresh standard installations. Existing Caddy installations are never overwritten automatically.
+- Release builds require Go 1.27.4 or newer to avoid `GO-2026-6859`. Archives include API/UI guides and complete runtime dependency, Pico and font licenses.
+
+OCI hosting needs an OCI-capable Incus release; development boxes additionally need `instance_oci_entrypoint`. Native tests used Incus 7.0.2 LTS. Existing hosts are not upgraded by publishing or installing this gateway release. See [the UI guide](docs/ui.md), [API guide](docs/api.md) and [verification record](TESTING.md).
+
 ## v0.4.0 - 2026-10-29
 
 - A one-line fresh Ubuntu 24.04 amd64 bootstrap, checksum-pinned to the v0.4.0 archive. It prepares native Incus, namespaced storage/network/project resources, public-key configuration and a new private gateway service. Existing gateways are never upgraded or restarted by it.

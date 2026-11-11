@@ -53,3 +53,7 @@ When the SSH session has a PTY, management text, help, JSON and diagnostics use 
 Non-JSON diagnostics go to stderr. Successful text listings use tab-separated fields. `image list` prints a preferred alias or short fingerprint, a 12-character fingerprint prefix and the OS release, colored only on an interactive terminal. `ls -l` still prints exactly six columns: `name`, `status`, `cpu`, `memory`, `processes` and `disk`, leaving unknown values empty in their column; image metadata appears only in JSON summaries. Ownership failures come from the backend and are never treated as successful removals.
 
 `pause` explicitly explains that Incus containers cannot promise exe.dev RAM-to-disk suspend. It never calls stop or freeze. Other unsupported commands return errors and never call the backend, including `ssh-key list` because the handler has no key-listing context.
+
+## API credentials
+
+`api enable|disable|rotate|status [--json]` manages opt-in REST/MCP access for the authenticated principal. It requires operator API setup. Enable and rotate return a newly generated token once; status and disable never return a token. The token grants lifecycle and guest command execution. Credential administration is SSH-only. See [API setup and security](../../docs/api.md).

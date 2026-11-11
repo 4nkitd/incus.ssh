@@ -1,5 +1,23 @@
 # Roadmap and verification gates
 
+## Delivered in v0.5.0
+
+- Opt-in, shared bearer token generated over SSH; hash-only storage, rotation and revocation.
+- REST and official-SDK HTTP MCP for owned container lifecycle and bounded guest execution.
+- Integrated `setup-api --domain` Caddy installation/configuration, plan-only by default. `--apply` requires an approved gateway restart and refuses existing proxy installations.
+- Local HTTP/MCP contract and security tests use a fake backend. Linux Caddy package/systemd setup, public ACME HTTPS and real Incus API acceptance remain release gates. No live deployment is implied.
+
+## Hosting panel
+
+- Embedded `/ui`, compact service workspaces, light/dark themes, SVG action icons, guided deployment and toast feedback.
+- Docker Hub and operator-approved public HTTPS OCI registries. Free-form image selection; quick picks are optional.
+- Kali rolling, Alpine, Go, PHP and Python development-box presets with fixed guest keepalive startup.
+- Live Incus counters, redacted environment inspection/editing, bounded logs, one-off commands and private persisted API activity.
+- Separate-origin HTTP app publishing, explicit consent and boot-bound revocation.
+- Native Incus 7.0.2 tests cover Docker Hub/GHCR deployment, environment updates, metrics, logs, publishing and data persistence. All five development-box toolchain probes pass after fixing entrypoint syntax and preserving OCI image PATH.
+- Existing Incus 6.0 hosts need a separately approved daemon upgrade for native OCI hosting. No Compose, archive imports, private-registry authentication, backup/volume manager, interactive browser terminal or image rollback is claimed.
+- Dynamic running-only admission is opt-in through `limits.running_memory`, with per-instance caps, a minimum reservation and host headroom checks. Stopped inventory does not consume that running budget.
+
 ## Delivered in v0.4.0
 
 - Pure-Go OpenTunnel client with local key generation, private identity storage and TLS relay tests.

@@ -3,6 +3,9 @@ set -eu
 
 LC_ALL=C
 export LC_ALL
+GOFLAGS=
+GOWORK=off
+export GOFLAGS GOWORK
 umask 022
 
 usage() {
@@ -54,6 +57,15 @@ command -v go >/dev/null 2>&1 || fail "go not found in PATH"
 command -v tar >/dev/null 2>&1 || fail "tar not found in PATH"
 command -v sha256sum >/dev/null 2>&1 || fail "sha256sum not found in PATH"
 [ "$(go env GOHOSTOS)/$(go env GOHOSTARCH)" = linux/amd64 ] || fail "run the release build on a Linux amd64 builder"
+build_go_version=$(go env GOVERSION)
+case "$build_go_version" in
+  go1.*.*) ;;
+  *) fail "release requires a stable Go toolchain" ;;
+esac
+minor=$(printf '%s' "$build_go_version" | cut -d. -f2)
+patch=$(printf '%s' "$build_go_version" | cut -d. -f3)
+case "$minor:$patch" in *[!0-9:]*) fail "invalid release toolchain version" ;; esac
+[ "$minor" -gt 27 ] || { [ "$minor" -eq 27 ] && [ "$patch" -ge 4 ]; } || fail "Go 1.27.4 or newer is required (GO-2026-6859)"
 
 for source in \
   go.mod \
@@ -65,6 +77,10 @@ for source in \
   SECURITY.md \
   CHANGELOG.md \
   docs/phase3.md \
+  docs/api.md \
+  docs/ui.md \
+  internal/controlapi/ui/pico.LICENSE.md \
+  docs/assets/fonts/LICENSE.txt \
   config.example.json \
   deploy/project.yaml \
   deploy/profile.yaml \
@@ -106,6 +122,28 @@ trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 
 mkdir -p "$stage/bin" "$stage/pack" "$stage/out"
+mkdir -p "$stage/licenses/$build_go_version"
+go mod verify
+cp "$(go env GOROOT)/LICENSE" "$stage/licenses/$build_go_version/LICENSE"
+: > "$stage/modules.raw"
+for target_os in linux darwin; do
+  case "$target_os" in linux) target_arch=amd64 ;; darwin) target_arch=arm64 ;; esac
+  CGO_ENABLED=0 GOOS=$target_os GOARCH=$target_arch go list -mod=readonly -deps -f '{{if .Module}}{{if not .Module.Main}}{{.Module.Path}} {{.Module.Version}} {{.Module.Dir}}{{end}}{{end}}' ./cmd/incus-for-devs >> "$stage/modules.raw"
+done
+sed '/^$/d' "$stage/modules.raw" | sort -u > "$stage/modules"
+while read -r module module_version module_dir; do
+  [ -n "$module_dir" ] || fail "missing module directory for $module"
+  target_dir=$stage/licenses/$module@$module_version
+  mkdir -p "$target_dir"
+  found=0
+  for license in "$module_dir"/LICENSE* "$module_dir"/COPYING* "$module_dir"/NOTICE* "$module_dir"/PATENTS; do
+    [ -f "$license" ] && [ ! -L "$license" ] || continue
+    cp "$license" "$target_dir/$(basename "$license")"
+    case "$(basename "$license")" in LICENSE*|COPYING*) found=1 ;; esac
+  done
+  [ "$found" -eq 1 ] || fail "missing license text for $module"
+  printf '%s %s\n' "$module" "$module_version" >> "$stage/licenses/MODULES.txt"
+done < "$stage/modules"
 
 package_target() {
   target_os=$1
@@ -117,10 +155,12 @@ package_target() {
 
   printf 'release: building %s (CGO_ENABLED=0, GOOS=%s, GOARCH=%s)\n' "$target" "$target_os" "$target_arch"
   mkdir -p "$stage/bin/$target"
-  CGO_ENABLED=0 GOOS=$target_os GOARCH=$target_arch GOFLAGS= GOWORK=off GOTOOLCHAIN=local \
+  CGO_ENABLED=0 GOOS=$target_os GOARCH=$target_arch GOFLAGS= GOWORK=off \
     go build -mod=readonly -trimpath -buildvcs=false \
       -ldflags "-X incus-for-devs/internal/app.Version=$version" \
       -o "$bin" ./cmd/incus-for-devs
+
+  [ "$(go version -m "$bin" | sed -n '1s/.*: //p')" = "$build_go_version" ] || fail "build used a different Go toolchain"
 
   if [ "$target" = linux-amd64 ]; then
     [ "$("$bin" version)" = "incus.ssh $version (incus-for-devs CLI)" ] \
@@ -139,6 +179,12 @@ package_target() {
   cp SECURITY.md "$pack/SECURITY.md"
   cp CHANGELOG.md "$pack/CHANGELOG.md"
   cp docs/phase3.md "$pack/docs/phase3.md"
+  cp docs/api.md "$pack/docs/api.md"
+  cp docs/ui.md "$pack/docs/ui.md"
+  cp internal/controlapi/ui/pico.LICENSE.md "$pack/docs/PICO-LICENSE.md"
+  cp docs/assets/fonts/LICENSE.txt "$pack/docs/FONT-LICENSE.txt"
+  cp -R "$stage/licenses" "$pack/docs/licenses"
+  find "$pack/docs/licenses" -type f -exec chmod 0644 {} \;
   cp config.example.json "$pack/config.example.json"
   cp deploy/project.yaml "$pack/deploy/project.yaml"
   cp deploy/profile.yaml "$pack/deploy/profile.yaml"
@@ -152,6 +198,10 @@ package_target() {
     "$pack/SECURITY.md" \
     "$pack/CHANGELOG.md" \
     "$pack/docs/phase3.md" \
+    "$pack/docs/api.md" \
+    "$pack/docs/ui.md" \
+    "$pack/docs/PICO-LICENSE.md" \
+    "$pack/docs/FONT-LICENSE.txt" \
     "$pack/config.example.json" \
     "$pack/deploy/project.yaml" \
     "$pack/deploy/profile.yaml" \
@@ -166,6 +216,11 @@ package_target() {
       SECURITY.md \
       CHANGELOG.md \
       docs/phase3.md \
+      docs/api.md \
+      docs/ui.md \
+      docs/PICO-LICENSE.md \
+      docs/FONT-LICENSE.txt \
+      docs/licenses \
       config.example.json \
       deploy/project.yaml \
       deploy/profile.yaml \
@@ -174,7 +229,7 @@ package_target() {
   tar -tzf "$archive" > "$stage/entries"
   while IFS= read -r entry; do
     case "$entry" in
-      bin/|bin/incus-for-devs|LICENSE|THIRD_PARTY_NOTICES.md|README.md|TESTING.md|SECURITY.md|CHANGELOG.md|docs/|docs/phase3.md|config.example.json|deploy/|deploy/project.yaml|deploy/profile.yaml|deploy/incus-for-devs.service) ;;
+      bin/|bin/incus-for-devs|LICENSE|THIRD_PARTY_NOTICES.md|README.md|TESTING.md|SECURITY.md|CHANGELOG.md|docs/|docs/phase3.md|docs/api.md|docs/ui.md|docs/PICO-LICENSE.md|docs/FONT-LICENSE.txt|docs/licenses/|docs/licenses/*|config.example.json|deploy/|deploy/project.yaml|deploy/profile.yaml|deploy/incus-for-devs.service) ;;
       *) fail "unexpected entry in $(basename "$archive"): $entry" ;;
     esac
   done < "$stage/entries"
@@ -187,6 +242,11 @@ package_target() {
     SECURITY.md \
     CHANGELOG.md \
     docs/phase3.md \
+    docs/api.md \
+    docs/ui.md \
+    docs/PICO-LICENSE.md \
+    docs/FONT-LICENSE.txt \
+    docs/licenses/MODULES.txt \
     config.example.json \
     deploy/project.yaml \
     deploy/profile.yaml \

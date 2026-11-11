@@ -30,7 +30,7 @@ test("site links and local assets resolve, with unique section IDs", () => {
 
 test("documentation covers each workflow and separates previews", () => {
   const guide = readFileSync(resolve(root, "docs.html"), "utf8");
-  for (const id of ["install", "connect", "quickstart", "environments", "shells", "lifecycle", "resources", "images", "files", "sharing", "commands", "security", "limits"]) {
+  for (const id of ["install", "connect", "quickstart", "environments", "shells", "lifecycle", "resources", "images", "files", "sharing", "ui", "api", "commands", "security", "limits"]) {
     assert.ok(guide.includes(`id="${id}"`), `missing workflow ${id}`);
   }
   assert.ok(guide.includes("Experimental"));

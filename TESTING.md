@@ -1,5 +1,52 @@
 # Verification records
 
+## v0.5.0 running-capacity and upgrade checkpoint
+
+November 11, 2026. Testing used an approved disposable Ubuntu builder with Go 1.27.4. No production data or credentials were copied to it.
+
+- Rehearsed Incus 6.0.7 to 7.0.2, rollback to 6.0.7, and another upgrade to 7.0.2. Native Ubuntu and nested-Docker fixtures preserved their original data and writes made after the first upgrade. Rollback restored old packages and the offline database while retaining current guest volumes.
+- Full Linux race tests passed with the running-only admission changes. Unit regressions cover stopped inventory, frozen/uncertain states, the minimum memory reservation, restart accounting, concurrent admissions, cancellation before acknowledgement, durable uncertain journals across backend restart, and completed-operation reconciliation.
+- Native running-only tests passed with conflicting Incus aggregate quotas removed. Confirmed stopped containers consumed no running budget; starts respected the configured budget.
+- A native delayed-start hook proved that disconnecting a client did not free its pending start's reservation. The daemon finished the start, a second admission was refused, and stopping the first container released capacity.
+- Native OCI hosting and all five development-box probes passed again on Incus 7.0.2. The opt-in native SCP/private-relay test was not enabled in this checkpoint; its earlier native results are recorded below.
+- Independent reviews found cancellation windows before and after operation registration. The fix initializes new containers stopped, journals starts before submitting them, retains mutation ownership after client disconnection, and fails closed on unacknowledged operations. Release-license discovery now uses the same sanitized dependency environment as both packaged targets.
+- The actual non-root systemd service passed an uncached BusyBox OCI deployment, UI/authentication checks, guest execution, stop/start/restart and deletion. The shipped `ProtectSystem=strict`, `NoNewPrivileges`, writable-path policy, 384-MiB service memory cap and 128-task cap remained active. Its completed admission journal was empty.
+- The final Linux race suite, vet and module verification passed after the Incus 6-compatible start-query fix. `govulncheck@v1.9.0` found no reachable vulnerabilities or affected imported packages; one advisory remained in an unused required module.
+
+Running-only mode is a single-gateway policy, not a host-global scheduler. An unacknowledged start can require operator reconciliation; see [the recovery procedure](docs/ui.md#running-only-resource-budgets). Deployment verification and final archive checks are separate from these source/native results.
+
+## Hosting panel checkpoint, November 11, 2026
+
+No existing server was upgraded or modified during this preview checkpoint. Builds and native tests used an explicitly approved disposable Ubuntu VM with Incus 7.0.2 LTS.
+
+- Full unfiltered Linux race suites passed as an ordinary user and as root with `NO_COLOR=1`. `go vet ./...` and `go mod verify` passed.
+- Native tests deployed Nginx from Docker Hub and Podinfo 6.17.0 from an HTTPS GHCR reference. They verified ownership, real HTTP proxying, environment editing without automatic restart, runtime readings, console logs, boot-bound publishing and filesystem persistence across stop/start. Test guests were removed afterward.
+- All five requested development boxes stayed running and passed their probes: Kali identified itself as Kali; Alpine reported 3.24.4; Go reported 1.27.4; PHP reported 8.5.12; Python reported 3.15.2 with pip 26.2.2. These are observed versions of floating image tags, not permanent version guarantees.
+- Native testing caught two issues that fixtures could not: `oci.entrypoint` requires shell-quoted argv, not a JSON array; and login-shell profiles remove the Go image's toolchain PATH. Fixed startup syntax and non-login OCI shell handling passed repeat native tests. Native system-container shell behavior remains unchanged.
+- Actual Incus cache metadata confirmed OCI images are also typed `container`; the legacy native-image catalog now excludes `properties.type=oci`, and native creation rejects cached OCI fingerprints. New tests cover that boundary.
+- Browser checks passed the guided custom-registry deployment, environment redaction, pending-restart warnings, log filtering, commands, publishing, restart revocation, deletion confirmation, all five preset entries, icons, theme switching and sign-out. Widths of 390 and 320 pixels had no page-level horizontal overflow. These browser checks use a labelled sample backend, not a deployed server.
+- Browser regressions passed external-state reconciliation without losing drafts, delayed mutation completion across tabs/services, disabled actions on stopped services, environment-load retry, visible post-mutation refresh errors, modal-safe toast deferral and removal of stale restart warnings on deletion. No uncaught browser errors were recorded.
+- Independent read-only backend and frontend reviews found and verified fixes for valid OCI reference grammar and the asynchronous UI/toast issues. Final reviewed sources had no remaining concrete blockers.
+
+The vulnerability scan found reachable standard-library advisory `GO-2026-6859` in Go 1.27.3. The module now selects Go 1.27.4. The full non-root Linux race suite, vet/module checks and root native hosting/development-box tests passed again with 1.27.4. The final scan found zero reachable vulnerabilities and zero affected imported packages, with one advisory in an unused required module. Previously deployed binaries are not patched by changing the source toolchain.
+
+Final Linux amd64 preview candidate: `v0.5.0-ui-preview`, built with Go 1.27.4, SHA-256 `d3f05cbe1cf7a076d41155c124cc6a9e13f1aaa8e1ef4850811b54742b43066d`. The artifact was retrieved and checksum-verified, the native test project was empty, and the disposable VM was deleted. This is not the subsequently packaged release artifact.
+
+Per-host deployment gates include an approved Incus upgrade where needed, Caddy `/ui` routing, application-domain DNS/TLS configuration, and live acceptance. Public wildcard ACME, WebSockets, private-registry credentials, Compose, backups/volume management and a browser PTY are not claimed.
+
+## Unreleased REST/MCP local checkpoint
+
+November 10, 2026, macOS. No production services, Linux packages, DNS or firewall rules were changed.
+
+- `go test -race ./internal/controlapi ./internal/command ./internal/app ./integration` passed. API package statement coverage is 90.2%. Tests cover hash-only token persistence, principal binding, SSH management commands, token rotation/disable, active-request cancellation, Host/Origin rejection, strict JSON, limits, output truncation, and lifecycle sharing revocation.
+- An official Go MCP client connected to a loopback HTTP test server, discovered all eight tools, called lifecycle and execution operations against a fake backend, rejected invalid arguments, and lost access after token rotation. Legacy 2025-06-18 and current 2026-07-28 HTTP fixtures exercise cancellation and deadlines.
+- `go run ./cmd/incus-for-devs setup-api --domain api.example.com` printed the no-change plan. Domain/configuration validation and the generated Caddyfile have unit tests. The root-only apply path has not been exercised on Linux.
+- `go test -race -count=1 -timeout 90s -skip 'PTY|ProcessGroup|TestSequentialExecsReleasePersistentContextReader' ./...` passed. This is a filtered suite, not a full-suite pass. The sequential-exec test's PTY branch failed on this Mac and failed identically in a separate clean export of untouched `HEAD`. Existing PTY/process-group exclusions remain documented below.
+- `go vet ./...`, `go mod verify`, `git diff --check` and `bash -n install.sh` passed. `govulncheck@v1.9.0` found no reachable vulnerabilities or affected imported packages, with one advisory in an unused required module.
+- Independent review found an embedded-buffer `ReadFrom` path that bypassed the execution output cap. A named buffer and real subprocess-pipe regression fixed it. The reviewer reran the regression under `-race` and found no remaining concrete bugs in the follow-up changes.
+
+Release gates remain: Ubuntu Caddy package/systemd setup, actual public ACME HTTPS, real Incus lifecycle and guest execution through REST/MCP, and the full unfiltered Linux race suite. A generated config or service-start request does not establish public HTTPS readiness.
+
 ## v0.4.0 release preparation
 
 The source and onboarding checks below establish the tested behavior for v0.4.0. Release archives are built with an embedded version on Linux amd64, verified against an explicit file allowlist, and accompanied by SHA-256 checksums. The standalone installer is pinned after archive creation so its checksum does not form a circular dependency with an archive containing itself. Final artifact/publication checks are recorded in the GitHub release notes and checksum asset.

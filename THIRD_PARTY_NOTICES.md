@@ -4,9 +4,13 @@ incus.ssh is distributed under the MIT License in [LICENSE](LICENSE). That
 license covers the Project's own source code only. It does not relicense,
 replace or reduce the rights and obligations attached to the third-party
 components below. Each component remains under its own license, and the full
-required copyright and license text is reproduced in this file.
+required copyright and license text is reproduced below or in the license files
+included with release archives.
 
 Runtime and test dependencies are pinned by `go.mod` and `go.sum`.
+Release archives also include verbatim runtime dependency license/notice files
+under `docs/licenses`, the Go toolchain license, and separate Pico and font
+license files. `docs/licenses/MODULES.txt` records the exact runtime module versions.
 `github.com/pkg/sftp` and `github.com/kr/fs` are used by test fixtures, not the
 runtime SFTP packet router. Versions and license files below were read from
 those exact modules after `go mod verify` succeeded.
@@ -22,6 +26,16 @@ those exact modules after `go mod verify` succeeded.
 | `github.com/pkg/sftp` | `v1.13.12` | BSD-2-Clause |
 | `github.com/kr/fs` | `v0.1.0` | BSD-3-Clause |
 | OpenTunnel protocol/client reference | `20aacfabbf0049c6ba026109adcaae716d1b3a5d` | MIT |
+| `github.com/modelcontextprotocol/go-sdk` | `v1.8.0` | Apache-2.0 / MIT transition; see its bundled LICENSE |
+| `github.com/google/jsonschema-go` | `v0.4.3` | MIT |
+| `github.com/segmentio/asm` | `v1.1.3` | MIT |
+| `github.com/segmentio/encoding` | `v0.5.4` | MIT |
+| `github.com/yosida95/uritemplate/v3` | `v3.0.2` | BSD-3-Clause |
+| `golang.org/x/oauth2` | `v0.35.0` | BSD-3-Clause |
+| `golang.org/x/sync` | `v0.20.0` | BSD-3-Clause |
+| `golang.org/x/time` | `v0.15.0` | BSD-3-Clause |
+| Pico CSS | `2.1.1` | MIT |
+| IBM Plex Sans / Mono fonts | bundled font files | SIL Open Font License 1.1 |
 
 `gopkg.in/yaml.v3` is dual-licensed. Files ported from libyaml are MIT; the
 remaining files are Apache-2.0. Both the dual-license file and the upstream
@@ -834,3 +848,6 @@ This is the complete Apache License 2.0 text. It applies to
    See the License for the specific language governing permissions and
    limitations under the License.
 ```
+# Pico CSS
+
+The embedded hosting UI bundles Pico CSS 2.1.1, copyright 2019-2024 Pico, under the MIT license. The bundled license is `internal/controlapi/ui/pico.LICENSE.md`. CSS SHA-256: `fbc9a63fc9fc9f72d12fd7fc9806e11fa9f77ae4f9cad146b27003a1119ba3db`.

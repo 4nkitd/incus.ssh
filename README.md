@@ -31,4 +31,8 @@ These are VM-like **Linux containers with a shared kernel**, not hardware VMs or
 
 [Website](https://4nkitd.github.io/incus.ssh/) · [Documentation](https://4nkitd.github.io/incus.ssh/docs.html) · [Releases](https://github.com/4nkitd/incus.ssh/releases) · [Issues](https://github.com/4nkitd/incus.ssh/issues) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT license](LICENSE)
 
-Current release: [v0.4.0](https://github.com/4nkitd/incus.ssh/releases/tag/v0.4.0). SCP/SFTP needs a guest SFTP server. [Explicit per-port HTTPS sharing](https://4nkitd.github.io/incus.ssh/docs.html#sharing) is opt-in and experimental. The executable and service are named `incus-for-devs`.
+Current release: [v0.5.0](https://github.com/4nkitd/incus.ssh/releases/tag/v0.5.0). SCP/SFTP needs a guest SFTP server. [Explicit per-port HTTPS sharing](https://4nkitd.github.io/incus.ssh/docs.html#sharing) is opt-in and experimental. The executable and service are named `incus-for-devs`.
+
+[Token-protected REST and HTTP MCP](docs/api.md) manage containers and guest commands. Access is disabled until the user generates a token over SSH. Caddy HTTPS setup is opt-in.
+
+The [compact `/ui` hosting panel](docs/ui.md) adds OCI image deployment, Kali/Alpine/language development boxes, runtime readings, environment editing, logs and activity. App hosting requires OCI-capable Incus. Dynamic running-only capacity is opt-in; stopped containers can retain their files without reserving RAM. Existing hosts are never upgraded automatically.

@@ -47,6 +47,8 @@
     <a href="#resources">Resource limits</a>
     <a href="#files">SCP / SFTP</a>
     <a href="#sharing">Experimental HTTPS sharing</a>
+    <a href="#ui">Hosting panel</a>
+    <a href="#api">REST and MCP</a>
     <a href="#json">Automation and JSON</a>
     <p class="sub">Reference</p>
     <a href="#commands">Every command</a>
@@ -71,10 +73,10 @@
       Start with a private server, create an environment and get to work. This guide covers each workflow,
       its commands and the limits you should know before relying on it.
     </p>
-    <p class="doc-meta">v0.4.0. Incus 6.0.0 on Ubuntu 24.04. Go 1.26+ for source builds.</p>
+    <p class="doc-meta">v0.5.0. Native OCI verification used Incus 7.0.2 LTS on Ubuntu 24.04. Build with Go 1.27.4 or newer.</p>
 
     <div class="callout">
-      <strong>Current release: v0.4.0.</strong> The one-line installer uses the checksum-pinned released binary.
+      <strong>Current release: v0.5.0.</strong> The one-line installer uses the checksum-pinned released binary.
       SCP/SFTP requires a server executable inside the guest. HTTPS sharing is optional and experimental; public hosted
       API/ACME behavior is not yet verified.
       The executable and service keep the name <code>incus-for-devs</code>.
@@ -84,6 +86,7 @@
       <a href="#install">Install a server</a><a href="#quickstart">Try the SSH workflow</a>
       <a href="#images">Choose Ubuntu or Debian</a><a href="#resources">Set CPU and RAM limits</a>
       <a href="#files">Copy files</a><a href="#sharing">Publish one service</a>
+      <a href="#ui">Open the hosting panel</a><a href="#api">Use REST or MCP</a>
     </div>
 
     <h2 id="overview">Overview</h2>
@@ -118,7 +121,7 @@
     <div class="copy-status" id="copy-status" role="status" aria-live="polite"></div>
     <p>The script asks for your public key, shows the changes and asks for confirmation. Never paste a private key.
       To inspect it first, <a href="https://github.com/4nkitd/incus.ssh/blob/main/install.sh">read the installer source</a>.
-      It installs the released v0.4.0 archive only after checking its pinned SHA-256.</p>
+      It installs the released v0.5.0 archive only after checking its pinned SHA-256.</p>
     <p>Setup installs the native Incus dependencies, creates a directory pool named <code>ifd-pool</code> and a managed
       bridge named <code>ifdbr0</code>, caches native Ubuntu 24.04, prepares the restricted <code>ifd-dev</code> project,
       and starts a new private gateway. The app username is <code>dev</code>. The default count limit is one container.</p>
@@ -243,7 +246,7 @@ share disable melon 3000</pre>
       <li>A storage pool and a managed bridge network matching the templates, or edited templates (OVN is not supported)</li>
       <li>A predefined, approved native Incus Linux image cached locally, plus any additional images the operator caches for image selection</li>
       <li>Root access for installation and project preparation</li>
-      <li>Go 1.26 or newer to build</li>
+      <li>Go 1.27.4 or newer to build a patched release</li>
       <li>OpenSSH on client machines; the compiled client is optional</li>
     </ul>
     <p>
@@ -626,6 +629,38 @@ ssh -p 2222 you@GATEWAY start operator-check</pre>
       through <code>/bin/sh -lc</code>. Quote the complete command locally when it contains pipes, variables or spaces.
     </p>
 
+    <h2 id="ui">Hosting panel</h2>
+    <p>After HTTPS/API setup, open <code>https://YOUR_CONTROL_HOST/ui</code> and connect using the generated token.
+      The token stays only in browser tab memory. Refreshing or signing out clears it.</p>
+    <p>The panel includes compact service workspaces, runtime readings, environment management, bounded logs,
+      noninteractive commands and activity. Deploy a Docker Hub image or a public image from an operator-approved
+      HTTPS OCI registry. Kali rolling, Alpine, Go, PHP CLI and Python development-box presets keep shell-oriented images running.</p>
+    <p>Native OCI needs a compatible Incus daemon; development boxes also need the <code>instance_oci_entrypoint</code>
+      extension. Incus 6.0 LTS does not support OCI. A gateway upgrade never upgrades the daemon automatically.</p>
+    <p>Apps start private. HTTP publishing requires a separate application domain, DNS and Caddy configuration,
+      and explicit per-app port consent. New container boots require publishing again. Files survive stop/start;
+      deletion removes them. Compose, archive imports, private registry credentials and browser PTYs are not included.</p>
+    <h3>Dynamic running-only capacity</h3>
+    <p>Set <code>limits.max_instances</code> to <code>0</code> and <code>limits.running_memory</code> to a budget such as
+      <code>8GiB</code> to count only active containers. Stopped containers retain storage without reserving RAM.
+      Frozen and uncertain states remain charged. Per-container limits, a 256-MiB minimum reservation and the 1-GiB host reserve remain.</p>
+    <p>Incus's native aggregate project quotas include stopped containers, so the operator must deliberately remove
+      conflicting inventory quotas while preserving project security restrictions. This policy is enforced by one gateway
+      process, not by administrative Incus commands. See the <a href="https://github.com/4nkitd/incus.ssh/blob/main/docs/ui.md">complete UI and operator guide</a>.</p>
+
+    <h2 id="api">REST and HTTP MCP</h2>
+    <p>REST uses <code>/api/v1</code>; Streamable HTTP MCP uses <code>/mcp</code>. Both require
+      <code>Authorization: Bearer TOKEN</code>, retain ownership/resource checks, and are disabled until enabled over authenticated SSH.</p>
+<pre class="block" tabindex="0">api enable
+api status
+api rotate
+api disable</pre>
+    <p>Enable and rotate show a generated token once. The gateway stores only its hash. Rotation and disable revoke
+      old tokens and cancel their in-flight requests, but cannot undo completed operations.</p>
+    <p><code>incus-for-devs setup-api --domain api.example.com</code> previews Caddy setup for a standard fresh installation.
+      <code>--apply</code> installs/configures Caddy and restarts the gateway. Existing Caddy setups are never overwritten automatically.
+      See the <a href="https://github.com/4nkitd/incus.ssh/blob/main/docs/api.md">REST/MCP setup guide</a> for routes, limits and safe activation.</p>
+
     <h2 id="json">JSON output</h2>
     <p>The management prompt supports Up/Down history, backspace and Ctrl-L to clear and redraw the current line. History is limited to 100 entries in the current SSH session and is never written to disk. Guest shells receive their own key streams unchanged.</p>
     <p>Interactive prompts and help use cyan, running status uses green, stopped status uses amber and plain-text errors use red. JSON, non-PTY output and guest program output are not decorated. Colors are disabled for an empty or dumb terminal, or a nonempty <code>NO_COLOR</code> in the server process.</p>
@@ -796,7 +831,7 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
   <div class="wrap">
     <div class="left">
       <strong>incus.ssh</strong><br>
-      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.4.0.
+      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.5.0.
     </div>
     <nav aria-label="Footer">
       <a href="index.html">Overview</a>
