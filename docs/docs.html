@@ -73,10 +73,10 @@
       Start with a private server, create an environment and get to work. This guide covers each workflow,
       its commands and the limits you should know before relying on it.
     </p>
-    <p class="doc-meta">v0.5.0. Native OCI verification used Incus 7.0.2 LTS on Ubuntu 24.04. Build with Go 1.27.4 or newer.</p>
+    <p class="doc-meta">v0.5.1. Native OCI verification used Incus 7.0.2 LTS on Ubuntu 24.04. Build with Go 1.27.4 or newer.</p>
 
     <div class="callout">
-      <strong>Current release: v0.5.0.</strong> The one-line installer uses the checksum-pinned released binary.
+      <strong>Current release: v0.5.1.</strong> The one-line installer uses the checksum-pinned released binary.
       SCP/SFTP requires a server executable inside the guest. HTTPS sharing is optional and experimental; public hosted
       API/ACME behavior is not yet verified.
       The executable and service keep the name <code>incus-for-devs</code>.
@@ -121,7 +121,7 @@
     <div class="copy-status" id="copy-status" role="status" aria-live="polite"></div>
     <p>The script asks for your public key, shows the changes and asks for confirmation. Never paste a private key.
       To inspect it first, <a href="https://github.com/4nkitd/incus.ssh/blob/main/install.sh">read the installer source</a>.
-      It installs the released v0.5.0 archive only after checking its pinned SHA-256.</p>
+      It installs the released v0.5.1 archive only after checking its pinned SHA-256.</p>
     <p>Setup installs the native Incus dependencies, creates a directory pool named <code>ifd-pool</code> and a managed
       bridge named <code>ifdbr0</code>, caches native Ubuntu 24.04, prepares the restricted <code>ifd-dev</code> project,
       and starts a new private gateway. The app username is <code>dev</code>. The default count limit is one container.</p>
@@ -632,14 +632,15 @@ ssh -p 2222 you@GATEWAY start operator-check</pre>
     <h2 id="ui">Hosting panel</h2>
     <p>After HTTPS/API setup, open <code>https://YOUR_CONTROL_HOST/ui</code> and connect using the generated token.
       The token stays only in browser tab memory. Refreshing or signing out clears it.</p>
-    <p>The panel includes compact service workspaces, runtime readings, environment management, bounded logs,
-      noninteractive commands and activity. Deploy a Docker Hub image or a public image from an operator-approved
-      HTTPS OCI registry. Kali rolling, Alpine, Go, PHP CLI and Python development-box presets keep shell-oriented images running.</p>
+    <p>The panel includes compact service workspaces, direct table lifecycle actions, an interactive browser terminal,
+      runtime readings, environment management, bounded logs, noninteractive commands and activity. Deploy a Docker Hub
+      image or a public image from an operator-approved HTTPS OCI registry. Kali rolling, Alpine, Go, PHP CLI and Python
+      development-box presets keep shell-oriented images running.</p>
     <p>Native OCI needs a compatible Incus daemon; development boxes also need the <code>instance_oci_entrypoint</code>
       extension. Incus 6.0 LTS does not support OCI. A gateway upgrade never upgrades the daemon automatically.</p>
     <p>Apps start private. HTTP publishing requires a separate application domain, DNS and Caddy configuration,
       and explicit per-app port consent. New container boots require publishing again. Files survive stop/start;
-      deletion removes them. Compose, archive imports, private registry credentials and browser PTYs are not included.</p>
+      deletion removes them. Compose, archive imports and private registry credentials are not included.</p>
     <h3>Dynamic running-only capacity</h3>
     <p>Set <code>limits.max_instances</code> to <code>0</code> and <code>limits.running_memory</code> to a budget such as
       <code>8GiB</code> to count only active containers. Stopped containers retain storage without reserving RAM.
@@ -831,7 +832,7 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
   <div class="wrap">
     <div class="left">
       <strong>incus.ssh</strong><br>
-      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.5.0.
+      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.5.1.
     </div>
     <nav aria-label="Footer">
       <a href="index.html">Overview</a>

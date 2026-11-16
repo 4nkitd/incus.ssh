@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Version 0.5.0 is the current release. It adds bearer-authenticated REST/MCP, the hosting UI and native OCI application support. Release builds use Go 1.27.4 or newer, fixing standard-library advisory `GO-2026-6859`. Public hosted OpenTunnel API/ACME behavior and long-lived renewal are not yet verified. Security fixes target the current `main` branch.
+Version 0.5.1 is the current release. It adds an interactive browser terminal and direct table actions on top of v0.5.0's bearer-authenticated REST/MCP, hosting UI and native OCI application support. Release builds use Go 1.27.4 or newer, fixing standard-library advisory `GO-2026-6859`. Public hosted OpenTunnel API/ACME behavior and long-lived renewal are not yet verified. Security fixes target the current `main` branch.
 
 ## Reporting a vulnerability
 
@@ -48,6 +48,8 @@ See [the feature guide](docs/phase3.md) for exact supported behavior and remaini
 ## API, UI and OCI boundaries
 
 Bearer tokens grant lifecycle and guest-root execution within the configured project. Tokens are generated over SSH, stored only as hashes on the gateway, and kept only in browser tab memory by the UI. Activity history excludes tokens, environment values and command text. Environment values are stored in Incus configuration and remain readable by host administrators.
+
+The browser terminal uses an exact-origin WebSocket and authenticates in its first frame within five seconds. It requires an owned running container and shares the API concurrency bound. Sessions expire after one hour and cancel when the connection closes or the token is revoked. Input/output queues are bounded and flow-controlled; terminal content is not audited or retained. Closing a terminal is not a guarantee that detached guest processes stop. Terminal-generated clipboard writes and hyperlink navigation are disabled. xterm requires dynamic inline CSS, so inline styles are allowed while scripts remain restricted to bundled same-origin assets.
 
 Clients may select images only from operator-approved HTTPS OCI registries. Registry definitions are not accepted from API clients. The configured image publishers must be trusted; image imports consume host storage. OCI images in the shared cache cannot bypass this workflow through native cached-image selection.
 

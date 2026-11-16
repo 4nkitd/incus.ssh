@@ -1,22 +1,30 @@
 # Hosting panel at `/ui`
 
-The hosting panel is included in v0.5.0. Incus 6.0 LTS can manage existing system containers but does not support native OCI application containers. A daemon upgrade needs a separate maintenance plan and approval; the gateway does not perform it automatically.
+The hosting panel is included in v0.5.0+, with the interactive browser terminal and direct table actions added in v0.5.1. Incus 6.0 LTS can manage existing system containers but does not support native OCI application containers. A daemon upgrade needs a separate maintenance plan and approval; the gateway does not perform it automatically.
 
 Build with Go 1.27.4 or a newer patched toolchain. The module selects 1.27.4 by default because Go 1.27.3 is affected by the HTTP/1 `MaxBytesReader` header-race crash vulnerability [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859). A new source checkout does not patch an already-running binary.
 
 ## What the panel does
 
-- Compact service inventory with search, state filtering and configured resource limits.
+- Compact service inventory with search, state filtering, configured resource limits and direct Start/Stop, Restart, Terminal and Delete actions. Deletion still requires confirmation.
 - A separate workspace for each service: runtime readings, environment, networking, logs, guest commands and activity.
 - Three-step deployment: image, configuration, review. Enter a Docker Hub reference or an HTTPS OCI registry URL. Quick picks are suggestions, not a per-image allowlist.
 - Environment variable names are visible; saved values are not returned. Changes do not restart a service automatically.
 - Runtime CPU, memory, root-disk, network and process readings come from Incus. CPU percentages require two samples. Graphs cover samples collected while that page is open, not historical monitoring. Running is not a health check.
-- Searchable console logs with opt-in five-second refresh. Commands are bounded, noninteractive guest-shell requests, not a browser terminal.
+- Searchable console logs with opt-in five-second refresh. Commands remain bounded, noninteractive guest-shell requests. The separate Terminal tab opens an interactive shell with Ctrl-C and resize support.
 - A private-by-default HTTP publishing workflow. Published apps use a different origin from the management panel. A new container boot requires publishing again.
 - The latest 200 panel, REST and MCP actions are retained in a private activity file. Commands, environment values and bearer tokens are not recorded. SSH and out-of-band Incus actions are not included. This is not an immutable compliance audit log.
 - Success, error and warning toasts. Success toasts auto-dismiss; errors stay until dismissed. Warnings stay until dismissed or their underlying condition clears. Repeated state warnings are suppressed. Notifications pause while a modal is open and return when it closes, rather than covering its controls. Form validation and persistent state indicators remain visible in context.
 
 Pico CSS 2.1.1 supplies the base controls and is bundled locally with its MIT license. The panel uses IBM Plex fonts and bundled SVG action icons. Light mode is the default; the theme preference can be saved in browser storage. The bearer token cannot: it stays only in tab memory and is cleared on refresh or sign-out.
+
+## Interactive terminal
+
+Open Terminal on a running container to connect as guest root. It never opens a host shell. Leaving the service tab, signing out or disconnecting closes the connection. Refreshing the page does not resume a shell, and detached guest processes may continue after disconnection.
+
+Terminal connections use same-origin WebSockets at `/api/v1/vms/NAME/terminal`. The first message authenticates with the existing token; tokens never appear in URLs, cookies or WebSocket subprotocols. Authentication must finish within five seconds. Token rotation or disable cancels connected sessions. Connections share the API concurrency limit, last at most one hour, and cap unacknowledged output at 64 KiB. No terminal input or output is recorded in activity logs.
+
+The reverse proxy must support WebSocket upgrades. Keep exact Host/Origin validation and authentication intact. The bundled xterm renderer needs dynamically generated inline CSS; the panel allows inline styles, but scripts still load only from its own origin. Remote assets, terminal-triggered clipboard writes and hyperlink navigation are disabled.
 
 ## Built-in development boxes
 

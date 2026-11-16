@@ -1,5 +1,7 @@
 # Third-Party Notices
 
+The browser terminal bundles `@xterm/xterm` 5.5.0 and `@xterm/addon-fit` 0.10.0, both MIT-licensed. Their unmodified license texts are stored beside the vendored assets in `internal/controlapi/ui/` and included in release archives under `docs/licenses/`. Assets are served locally; no terminal content is sent to a CDN.
+
 incus.ssh is distributed under the MIT License in [LICENSE](LICENSE). That
 license covers the Project's own source code only. It does not relicense,
 replace or reduce the rights and obligations attached to the third-party

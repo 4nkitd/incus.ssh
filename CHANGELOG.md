@@ -2,6 +2,15 @@
 
 Notable changes to incus.ssh.
 
+## v0.5.1 - 2026-11-14
+
+- Interactive browser Terminal tab in `/ui`, backed by a real guest PTY over same-origin WebSockets (`/api/v1/vms/NAME/terminal`) with resize, Ctrl-C, Unicode and exit-status handling.
+- First-frame WebSocket bearer authentication within a five-second window; tokens are never sent in URLs, cookies or WebSocket subprotocols. Token rotation, disable or client sign-out cancels active terminal sessions.
+- Bounded input/output queues with explicit acknowledgement flow control, shared API concurrency enforcement and a one-hour session limit. Terminal keystrokes and output are never written to activity logs.
+- Direct Start/Stop, Restart, Terminal and Delete action buttons in the `/ui` services table, with state-aware controls and typed deletion confirmation.
+- Bundled local `@xterm/xterm` 5.5.0 and `@xterm/addon-fit` 0.10.0 assets with MIT license notices packaged in release archives. No external CDN requests, OSC 52 clipboard writes or terminal hyperlink navigation.
+- Added `/ui` screenshots to the README.
+
 ## v0.5.0 - 2026-11-11
 
 - Token-protected REST and Streamable HTTP MCP for owned container lifecycle and guest commands. Access is opt-in through authenticated SSH; enable/rotate generate a token once, store only its hash, and revoke old requests immediately.

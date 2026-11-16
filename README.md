@@ -27,12 +27,22 @@ Linux
 
 These are VM-like **Linux containers with a shared kernel**, not hardware VMs or a hostile-tenant isolation boundary. You own backups, network policy and uptime.
 
+## Hosting panel (`/ui`)
+
+Deploy OCI images from Docker Hub or approved HTTPS registries, launch Kali, Alpine, Go, PHP CLI and Python development boxes, inspect live CPU/memory/storage counters, edit environment variables and open an interactive guest terminal in the browser.
+
+![Services overview in /ui showing running and stopped containers, running RAM budget, inline Start/Stop/Restart/Terminal/Delete row actions and recent API activity](docs/assets/ui-services.png)
+
+![Interactive browser terminal in /ui connected to an Alpine development box over WebSockets](docs/assets/ui-terminal.png)
+
+![Service runtime overview in /ui with live CPU, memory and storage sparklines, configured limits and network counters](docs/assets/ui-overview.png)
+
 ## Links
 
 [Website](https://4nkitd.github.io/incus.ssh/) · [Documentation](https://4nkitd.github.io/incus.ssh/docs.html) · [Releases](https://github.com/4nkitd/incus.ssh/releases) · [Issues](https://github.com/4nkitd/incus.ssh/issues) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT license](LICENSE)
 
-Current release: [v0.5.0](https://github.com/4nkitd/incus.ssh/releases/tag/v0.5.0). SCP/SFTP needs a guest SFTP server. [Explicit per-port HTTPS sharing](https://4nkitd.github.io/incus.ssh/docs.html#sharing) is opt-in and experimental. The executable and service are named `incus-for-devs`.
+Current release: [v0.5.1](https://github.com/4nkitd/incus.ssh/releases/tag/v0.5.1). SCP/SFTP needs a guest SFTP server. [Explicit per-port HTTPS sharing](https://4nkitd.github.io/incus.ssh/docs.html#sharing) is opt-in and experimental. The executable and service are named `incus-for-devs`.
 
 [Token-protected REST and HTTP MCP](docs/api.md) manage containers and guest commands. Access is disabled until the user generates a token over SSH. Caddy HTTPS setup is opt-in.
 
-The [compact `/ui` hosting panel](docs/ui.md) adds OCI image deployment, Kali/Alpine/language development boxes, runtime readings, environment editing, logs and activity. App hosting requires OCI-capable Incus. Dynamic running-only capacity is opt-in; stopped containers can retain their files without reserving RAM. Existing hosts are never upgraded automatically.
+The [compact `/ui` hosting panel](docs/ui.md) adds OCI image deployment, development boxes, direct table lifecycle actions, an interactive WebSocket PTY terminal, runtime readings, environment editing, logs and activity. App hosting requires OCI-capable Incus. Dynamic running-only capacity is opt-in; stopped containers can retain their files without reserving RAM. Existing hosts are never upgraded automatically.

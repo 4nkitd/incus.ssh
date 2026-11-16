@@ -80,6 +80,8 @@ for source in \
   docs/api.md \
   docs/ui.md \
   internal/controlapi/ui/pico.LICENSE.md \
+  internal/controlapi/ui/xterm.LICENSE \
+  internal/controlapi/ui/addon-fit.LICENSE \
   docs/assets/fonts/LICENSE.txt \
   config.example.json \
   deploy/project.yaml \
@@ -125,6 +127,9 @@ mkdir -p "$stage/bin" "$stage/pack" "$stage/out"
 mkdir -p "$stage/licenses/$build_go_version"
 go mod verify
 cp "$(go env GOROOT)/LICENSE" "$stage/licenses/$build_go_version/LICENSE"
+mkdir -p "$stage/licenses/xterm-5.5.0" "$stage/licenses/xterm-addon-fit-0.10.0"
+cp internal/controlapi/ui/xterm.LICENSE "$stage/licenses/xterm-5.5.0/LICENSE"
+cp internal/controlapi/ui/addon-fit.LICENSE "$stage/licenses/xterm-addon-fit-0.10.0/LICENSE"
 : > "$stage/modules.raw"
 for target_os in linux darwin; do
   case "$target_os" in linux) target_arch=amd64 ;; darwin) target_arch=arm64 ;; esac
@@ -247,6 +252,8 @@ package_target() {
     docs/PICO-LICENSE.md \
     docs/FONT-LICENSE.txt \
     docs/licenses/MODULES.txt \
+    docs/licenses/xterm-5.5.0/LICENSE \
+    docs/licenses/xterm-addon-fit-0.10.0/LICENSE \
     config.example.json \
     deploy/project.yaml \
     deploy/profile.yaml \

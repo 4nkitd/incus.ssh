@@ -1,5 +1,18 @@
 # Verification records
 
+## v0.5.1 browser terminal checkpoint, November 11-12, 2026
+
+The v0.5.1 terminal and table-action changes were tested on an approved disposable Ubuntu host with Incus 7.0.2 and Go 1.27.4. Production credentials and data were not copied to it.
+
+- The complete Linux race suite and vet passed, as did ten repeated terminal race runs, module verification and six site tests.
+- Native WebSocket-to-Incus PTY tests passed shell input/output, resize, Ctrl-C, Unicode and exit status. Unit tests cover authentication, foreign-container denial, exact Origin/query rejection, revocation/disconnection, blocked guest input, shared concurrency and output flow control.
+- Helium connected through a real Caddy proxy to the shipped hardened non-root gateway service. Browser typing, Ctrl-C and a 60-KiB paste completed in a real Alpine guest. At 390 pixels the terminal stayed inside the page without whole-page horizontal overflow.
+- Table Stop and Restart actions worked through confirmation dialogs. Opening Terminal while stopped, then starting from the header, rendered and connected the terminal. Delete rejected a wrong confirmation name, then removed only the disposable fixture when the correct name was entered.
+- Signing out ended the native exec operation. No browser errors were recorded. The isolated native test project was empty after cleanup.
+- Review fixes added a separate bounded input pump and acknowledged input pacing, and made the terminal panel reconcile a stopped-to-running transition. Tests wait for hijacked HTTP handlers before removing their private state directories.
+
+Terminal input/output is not an audit recording. Detached guest processes may outlive a connection. Release archive checksums, license packaging and native binary smoke tests are verified during `scripts/release.sh v0.5.1`.
+
 ## v0.5.0 running-capacity and upgrade checkpoint
 
 November 11, 2026. Testing used an approved disposable Ubuntu builder with Go 1.27.4. No production data or credentials were copied to it.
