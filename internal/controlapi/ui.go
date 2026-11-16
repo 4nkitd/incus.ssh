@@ -23,9 +23,9 @@ func serveUI(w http.ResponseWriter, r *http.Request) {
 	switch name {
 	case "index.html":
 		contentType = "text/html; charset=utf-8"
-	case "app.js":
+	case "app.js", "xterm.js", "addon-fit.js":
 		contentType = "text/javascript; charset=utf-8"
-	case "app.css", "pico.min.css":
+	case "app.css", "pico.min.css", "xterm.css":
 		contentType = "text/css; charset=utf-8"
 	case "icons.svg":
 		contentType = "image/svg+xml"
@@ -41,7 +41,7 @@ func serveUI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Frame-Options", "DENY")
 	if r.Method == http.MethodGet {

@@ -17,13 +17,14 @@
   let activeLogRefresh = null;
   let reconcileAccess = null;
   let focusServiceTab = false;
+  let activeTerminal = null;
   const inspection = new Map();
   const samples = new Map();
   const requests = new Set();
   const toastTimers=new Map();
   const toastControls=new WeakMap();
   const warningStates=new Set();
-  const tabsAvailable = [['overview','Overview'],['environment','Environment'],['access','Networking'],['logs','Logs'],['commands','Commands'],['activity','Activity']];
+  const tabsAvailable = [['overview','Overview'],['terminal','Terminal'],['environment','Environment'],['access','Networking'],['logs','Logs'],['commands','Commands'],['activity','Activity']];
   try { const saved = localStorage.getItem('ifd-ui-theme'); if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved; } catch {}
 
   function element(tag, className, text) {
@@ -125,6 +126,7 @@
     } finally { requests.delete(controller); }
   }
   function signOut() {
+    closeTerminal();
     generation++;
     token = '';
     for (const request of requests) request.abort();
@@ -177,6 +179,7 @@
     const result = await api('vms');
     for(const removed of apps.filter(app=>!result.vms.some(current=>current.name===app.name))){clearServiceWarnings(removed.name);inspection.delete(removed.name);samples.delete(removed.name);}
     apps = result.vms;
+    if(activeTerminal&&!apps.some(app=>app.name===activeTerminal.name&&app.status==='Running'))activeTerminal.disconnect('Container is not running.');
     if (!apps.some((app) => app.name === selected)) { selected = ''; tab = 'overview'; }
     renderList();
     if (view === 'service' && !apps.some((app) => app.name === selected)) navigate('services');
@@ -185,6 +188,7 @@
       if (JSON.stringify(previous) !== JSON.stringify(current)) {
         const header = $('service-header');
         if (header) header.replaceWith(serviceHeader(current));
+        if(tab==='terminal'&&current.status==='Running'&&!activeTerminal)renderDetail();
         if (tab === 'access' && reconcileAccess) reconcileAccess(current);
         if ($('command-status')) $('command-status').hidden = current.status === 'Running';
         if (system.inspection) loadInspection(current.name, detailGeneration);
@@ -221,6 +225,7 @@
   }
   function applyRoute() {
     if (!token || !system) return;
+    closeTerminal();
     for(const key of [...warningStates]){if(key.startsWith('access:'))resolveWarning(key);}
     const parts = location.hash.slice(1).split('/');
     let name = ''; try { name = decodeURIComponent(parts[1] || ''); } catch {}
@@ -256,7 +261,7 @@
     $('no-results').hidden = !apps.length || visible.length !== 0;
     const table = element('table', 'service-table');
     const head = element('thead'); const heading = element('tr');
-    for (const [label, className] of [['Service',''],['State',''],['Image','image-column'],['Limits','limits-column'],['Access','access-column'],['','']]) heading.append(element('th', className, label));
+    for (const [label, className] of [['Service',''],['State',''],['Image','image-column'],['Limits','limits-column'],['Access','access-column'],['Actions','row-action']]) heading.append(element('th', className, label));
     head.append(heading); const body = element('tbody');
     for (const app of visible) {
       const row = element('tr');
@@ -269,6 +274,18 @@
       const limits = element('td','limits-column'); limits.append(element('span','',`${app.cpu || '—'} CPU`),element('small','',app.memory || 'Not reported'));
       const access = element('td','access-column'); access.append(element('span','access-label',app.http_port ? 'Published' : app.kind === 'application' ? 'Private' : 'Operator managed'));
       const action = element('td','row-action');
+      const tools=element('div','row-tools');
+      const addAction=(label,glyph,callback,enabled=true,mutation=false)=>{
+        const control=button('','row-tool',callback,mutation);
+        control.append(icon(glyph));control.title=`${label} ${app.name}`;control.setAttribute('aria-label',control.title);
+        control.dataset.stateConflict=String(!enabled);control.disabled=!enabled||(mutation&&busy);tools.append(control);
+      };
+      const running=app.status==='Running',stopped=app.status==='Stopped'||app.status==='Frozen';
+      addAction(running?'Stop':app.status==='Frozen'?'Resume':'Start',running?'stop':'play',()=>confirmAction(app,running?'stop':'start'),running||stopped,true);
+      addAction('Restart','refresh',()=>confirmAction(app,'restart'),running,true);
+      addAction('Terminal','terminal',()=>navigate('service',app.name,'terminal'),running);
+      addAction('Delete','trash',()=>confirmAction(app,'delete'),true,true);
+      action.append(tools);
       if (app.http_port && system.applications_domain) { const link = element('a','quiet','Open ↗'); link.href=`https://${app.name}.${system.applications_domain}`; link.target='_blank';link.rel='noopener noreferrer';link.setAttribute('aria-label',`Open ${app.name}`);action.append(link); }
       else { const manage = button('Details','quiet',()=>openApp(app.name)); manage.setAttribute('aria-label',`Details for ${app.name}`);action.append(manage); }
       row.append(name,status,image,limits,access,action);body.append(row);
@@ -290,6 +307,7 @@
     return header;
   }
   function renderDetail() {
+    closeTerminal();
     const epoch = ++detailGeneration;
     activeLogRefresh = null; reconcileAccess = null;
     const app = apps.find((item) => item.name === selected);
@@ -310,6 +328,7 @@
     const body = element('div', 'detail-body'); body.id='service-panel';body.setAttribute('role', 'tabpanel');body.setAttribute('aria-labelledby',`service-tab-${tab}`);
     $('detail').replaceChildren(header,pending,tabs,body);
     if (tab === 'overview') renderOverview(body, app, epoch);
+    if (tab === 'terminal') renderTerminal(body, app);
     if (tab === 'environment') renderEnvironment(body,app,epoch);
     if (tab === 'logs') renderLogs(body, app);
     if (tab === 'commands') renderCommands(body, app);
@@ -317,6 +336,75 @@
     if (tab === 'activity'){const heading=element('div','section-heading');heading.append(element('h2','','Service activity'),element('p','','Recorded API actions for this service.'));body.append(heading);const list=element('div');list.id='service-activity';body.append(list);renderActivity(list,activity.filter(event=>event.name===app.name));refreshActivity();}
     if(focusServiceTab){$(`service-tab-${tab}`).focus();focusServiceTab=false;}else header.querySelector('h1').focus();
     updateMutationEligibility();
+  }
+  function closeTerminal(){
+    if(activeTerminal){activeTerminal.dispose();activeTerminal=null;}
+  }
+  window.addEventListener('pagehide',closeTerminal);
+  function renderTerminal(body,app){
+    const heading=element('div','section-heading');
+    heading.append(element('h2','','Terminal'),element('p','','Interactive root shell inside this container. Leaving this tab disconnects the shell; detached processes may continue.'));
+    body.append(heading);
+    if(app.status!=='Running'){body.append(element('p','notice','Start this container before opening a terminal.'));return;}
+    if(!window.Terminal||!window.FitAddon){body.append(element('p','error-text','Terminal assets could not load. Refresh the page to retry.'));return;}
+    const toolbar=element('div','terminal-toolbar');
+    const state=element('span','terminal-state','Disconnected');state.setAttribute('role','status');
+    const mount=element('div','terminal-screen');mount.setAttribute('aria-label',`Terminal for ${app.name}`);
+    const term=new Terminal({cursorBlink:true,scrollback:3000,fontFamily:'ui-monospace, SFMono-Regular, Menlo, monospace',fontSize:13,theme:{background:'#151b26',foreground:'#e6edf7',cursor:'#b5c8ff'},linkHandler:{activate:()=>{}},allowProposedApi:true});
+    const fit=new FitAddon.FitAddon();term.loadAddon(fit);
+    let socket=null,disposed=false,ready=false,exited=false;
+    let pendingInput=[],inFlight=[],queuedInputBytes=0;
+    const epoch=generation;
+    const resize=()=>{
+      if(disposed||!mount.isConnected)return;
+      fit.fit();
+      if(term.cols>500||term.rows>200)term.resize(Math.min(term.cols,500),Math.min(term.rows,200));
+      if(ready&&socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:'resize',cols:term.cols,rows:term.rows}));
+    };
+    const disconnect=(reason='Disconnected')=>{
+      ready=false;state.textContent=reason;
+      pendingInput=[];inFlight=[];queuedInputBytes=0;
+      const previous=socket;socket=null;
+      if(previous){previous.onopen=null;previous.onmessage=null;previous.onerror=null;previous.onclose=null;previous.close();}
+      connect.disabled=disposed;end.disabled=true;
+    };
+    const flushInput=()=>{
+      while(ready&&socket?.readyState===WebSocket.OPEN&&inFlight.length<4&&pendingInput.length){const chunk=pendingInput.shift();inFlight.push(chunk.length);socket.send(chunk);}
+    };
+    const sendInput=(data)=>{
+      if(!ready||socket?.readyState!==WebSocket.OPEN)return;
+      const bytes=new TextEncoder().encode(data);
+      if(queuedInputBytes+bytes.length>65536){message('Terminal input is limited to 64 KiB at a time. This input was not sent.','warning');return;}
+      queuedInputBytes+=bytes.length;
+      for(let offset=0;offset<bytes.length;offset+=4096)pendingInput.push(bytes.subarray(offset,offset+4096));
+      flushInput();
+    };
+    const connect=button('Connect terminal','secondary outline',()=>{
+      if(disposed||generation!==epoch||!token)return;
+      if(!apps.some(item=>item.name===app.name&&item.status==='Running')){state.textContent='Start the container first.';return;}
+      disconnect();resize();term.reset();exited=false;connect.disabled=true;end.disabled=false;state.textContent='Connecting…';
+      const url=new URL(`/api/v1/vms/${encodeURIComponent(app.name)}/terminal`,location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';
+      const current=new WebSocket(url);socket=current;current.binaryType='arraybuffer';
+      current.onopen=()=>{if(socket!==current||generation!==epoch)return;current.send(JSON.stringify({type:'auth',token,cols:term.cols,rows:term.rows}));};
+      current.onmessage=(event)=>{
+        if(disposed||socket!==current||generation!==epoch)return;
+        if(event.data instanceof ArrayBuffer){term.write(new Uint8Array(event.data),()=>{if(socket===current&&current.readyState===WebSocket.OPEN)current.send(JSON.stringify({type:'ack'}));});return;}
+        let packet;try{packet=JSON.parse(event.data)}catch{disconnect('Invalid terminal response.');return;}
+        if(packet.type==='ready'){ready=true;state.textContent=`Connected · ${app.name}`;term.focus();}
+        if(packet.type==='input_ack'){if(!inFlight.length){disconnect('Invalid terminal input acknowledgement.');return;}queuedInputBytes-=inFlight.shift();flushInput();}
+        if(packet.type==='exit'){exited=true;state.textContent=`Shell exited (${packet.code}).`;ready=false;connect.disabled=false;end.disabled=true;}
+        if(packet.type==='error'){exited=true;state.textContent=packet.message;ready=false;}
+      };
+      current.onerror=()=>{if(socket===current)state.textContent='Connection failed. Check your token and container state.';};
+      current.onclose=(event)=>{if(socket!==current)return;socket=null;ready=false;connect.disabled=false;end.disabled=true;if(!exited)state.textContent=event.code===1008?'Connection refused. Check your token and container state.':'Disconnected. Reconnect to open a new shell.';};
+    });
+    const end=button('Disconnect','secondary outline',()=>disconnect());end.disabled=true;
+    toolbar.append(state,connect,end);body.append(toolbar,mount);
+    term.open(mount);term.parser.registerOscHandler(52,()=>true);
+    const input=term.onData(sendInput);
+    const observer=new ResizeObserver(resize);observer.observe(mount);
+    activeTerminal={name:app.name,disconnect,dispose:()=>{disposed=true;disconnect();observer.disconnect();input.dispose();term.dispose();}};
+    requestAnimationFrame(()=>{if(!disposed){resize();connect.click();}});
   }
   function renderOverview(body, app, epoch) {
     const heading=element('div','section-heading');heading.append(element('h2','','Runtime overview'),element('p','','Readings refresh every 5 seconds while this page is visible. Running is a process state, not a health check.'));body.append(heading);
@@ -396,7 +484,7 @@
       catch(error){if(error.name!=='AbortError')message(error.message,true);}finally{name.disabled=false;value.disabled=false;if(session===generation)setBusy(false);}
     });body.append(form);
   }
-  const actionNames={deploy_app:'Deploy service',create_container:'Create container',start:'Start',stop:'Stop',restart:'Restart',delete:'Delete',publish:'Publish port',unpublish:'Make private',run_command:'Run command',update_environment:'Update environment'};
+  const actionNames={deploy_app:'Deploy service',create_container:'Create container',start:'Start',stop:'Stop',restart:'Restart',delete:'Delete',publish:'Publish port',unpublish:'Make private',run_command:'Run command',update_environment:'Update environment',terminal_open:'Open terminal',terminal_close:'Close terminal'};
   function renderActivity(target,events){
     target.replaceChildren();if(!activityPersistent)target.append(element('p',system?.preview?'fine-print':'notice',system?.preview?'Preview activity resets when this preview process stops.':'Activity could not be saved to disk. The latest entries may be lost on restart.'));
     if(!events.length){target.append(element('p','empty-activity','No recorded actions yet. Actions performed over SSH are not included here.'));return;}

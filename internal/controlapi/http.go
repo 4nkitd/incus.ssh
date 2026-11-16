@@ -48,6 +48,10 @@ func NewHandler(tokens *Tokens, backend core.Backend, sharing core.Sharing, time
 			serveUI(w, r)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/api/v1/vms/") && strings.HasSuffix(r.URL.Path, "/terminal") {
+			s.terminal(w, r, tokens, gate, timeout)
+			return
+		}
 		authorization := r.Header.Values("Authorization")
 		if len(authorization) != 1 || !strings.HasPrefix(authorization[0], "Bearer ") {
 			unauthorized(w)

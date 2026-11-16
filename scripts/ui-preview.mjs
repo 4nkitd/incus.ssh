@@ -34,11 +34,11 @@ http.createServer(async (req, res) => {
     if (url.pathname === '/') { res.writeHead(302, { Location: '/ui' }); res.end(); return; }
     if (url.pathname === '/ui' || url.pathname.startsWith('/ui/')) {
       const name = url.pathname === '/ui' || url.pathname === '/ui/' ? 'index.html' : url.pathname.slice(4);
-      const types = { 'index.html': 'text/html', 'app.css': 'text/css', 'pico.min.css': 'text/css', 'icons.svg':'image/svg+xml', 'app.js': 'text/javascript', 'IBMPlexSans-Regular.woff2': 'font/woff2', 'IBMPlexSans-SemiBold.woff2': 'font/woff2' };
+      const types = { 'index.html': 'text/html', 'app.css': 'text/css', 'pico.min.css': 'text/css', 'xterm.css': 'text/css', 'icons.svg':'image/svg+xml', 'app.js': 'text/javascript', 'xterm.js': 'text/javascript', 'addon-fit.js': 'text/javascript', 'IBMPlexSans-Regular.woff2': 'font/woff2', 'IBMPlexSans-SemiBold.woff2': 'font/woff2' };
       if (!types[name] || req.method !== 'GET') return json(res, 404, { error: 'Not found' });
       let content = await readFile(new URL(name, files));
       if (name === 'index.html') content = content.toString().replace('<form id="login-form">', '<p class="notice">Local preview with sample data. Use <strong>preview-token</strong> to connect. No real server is affected.</p><form id="login-form">');
-      res.writeHead(200, { 'Content-Type': types[name], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }); res.end(content); return;
+      res.writeHead(200, { 'Content-Type': types[name], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }); res.end(content); return;
     }
     if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) return json(res, 403, { error: 'Cross-origin requests are rejected.' });
     if (req.headers.authorization !== 'Bearer preview-token') return json(res, 401, { error: 'Use preview-token in this local preview.' });
