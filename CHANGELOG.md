@@ -2,7 +2,7 @@
 
 Notable changes to incus.ssh.
 
-## Unreleased
+## v0.6.0 - 2026-11-18
 
 - Stock SSH clients can target a running container with `ssh -p 2222 USER+NAME@GATEWAY [COMMAND]`. Shell and exec requests go straight to that guest. The gateway still checks the user's registered key, project and container ownership. No guest SSH daemon is required.
 

@@ -73,10 +73,10 @@
       Start with a private server, create an environment and get to work. This guide covers each workflow,
       its commands and the limits you should know before relying on it.
     </p>
-    <p class="doc-meta">v0.5.1. Native OCI verification used Incus 7.0.2 LTS on Ubuntu 24.04. Build with Go 1.27.4 or newer.</p>
+    <p class="doc-meta">v0.6.0. Native OCI verification used Incus 7.0.2 LTS on Ubuntu 24.04. Build with Go 1.27.4 or newer.</p>
 
     <div class="callout">
-      <strong>Current release: v0.5.1.</strong> The one-line installer uses the checksum-pinned released binary.
+      <strong>Current release: v0.6.0.</strong> The one-line installer uses the checksum-pinned released binary.
       SCP/SFTP requires a server executable inside the guest. HTTPS sharing is optional and experimental; public hosted
       API/ACME behavior is not yet verified.
       The executable and service keep the name <code>incus-for-devs</code>.
@@ -121,7 +121,7 @@
     <div class="copy-status" id="copy-status" role="status" aria-live="polite"></div>
     <p>The script asks for your public key, shows the changes and asks for confirmation. Never paste a private key.
       To inspect it first, <a href="https://github.com/4nkitd/incus.ssh/blob/main/install.sh">read the installer source</a>.
-      It installs the released v0.5.1 archive only after checking its pinned SHA-256.</p>
+      It installs the released v0.6.0 archive only after checking its pinned SHA-256.</p>
     <p>Setup installs the native Incus dependencies, creates a directory pool named <code>ifd-pool</code> and a managed
       bridge named <code>ifdbr0</code>, caches native Ubuntu 24.04, prepares the restricted <code>ifd-dev</code> project,
       and starts a new private gateway. The app username is <code>dev</code>. The default count limit is one container.</p>
@@ -188,7 +188,7 @@ ssh melon 'cd /root/project &amp;&amp; ls -la'</pre>
       <code>/bin/sh -lc</code> inside the guest. Input, output, error output and exit status pass through. A minimal image
       without <code>/bin/sh</code> cannot run these shell commands.</p>
 
-    <h3 id="agent-ssh">Direct SSH for CLI agents (unreleased)</h3>
+    <h3 id="agent-ssh">Direct SSH for CLI agents</h3>
     <p>Use <code>USER+NAME@GATEWAY</code> to send shell and exec requests to one running guest. No guest IP, SSH daemon or API token is needed.
       The username before <code>+</code> and its registered key still select the project. Omitting <code>+NAME</code> keeps the management prompt.
       The alias does not restrict the key: anyone holding it can still use that user's management login.</p>
@@ -773,7 +773,7 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
           <tr><th scope="row">HTTPS sharing</th><td><a href="#sharing">Explicit per-machine, per-port experimental feature</a>. Opt-in only; hosted verification remains pending.</td></tr>
           <tr><th scope="row">Docker, nested containers</th><td>Not supported. The project and profile block nesting and low-level configuration.</td></tr>
           <tr><th scope="row">Direct host-port forwarding</th><td>Unsupported. HTTPS publishing does not enable SSH TCP forwarding or arbitrary host targets.</td></tr>
-          <tr><th scope="row">Direct guest hostnames</th><td>No per-guest DNS or SSH listener. Use <code>ssh NAME</code> through the gateway, or <a href="#agent-ssh">a guest SSH alias</a> with an unreleased gateway build.</td></tr>
+          <tr><th scope="row">Direct guest hostnames</th><td>No per-guest DNS or SSH listener. Use <code>ssh NAME</code> through the gateway, or <a href="#agent-ssh">a guest SSH alias</a> on v0.6.0 or later.</td></tr>
           <tr><th scope="row">OVN networks</th><td>Not supported. Setup accepts only a managed bridge network.</td></tr>
           <tr><th scope="row">Multiuser</th><td>Exactly one configured app user.</td></tr>
           <tr><th scope="row">Custom images, profiles, projects</th><td>Profiles and projects are operator-only. The operator caches predefined images with local operator mode or native Incus; clients may select a cached image, but cannot change the cache.</td></tr>
@@ -857,7 +857,7 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
   <div class="wrap">
     <div class="left">
       <strong>incus.ssh</strong><br>
-      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.5.1.
+      An independent project, not affiliated with Incus or exe.dev. MIT licensed. v0.6.0.
     </div>
     <nav aria-label="Footer">
       <a href="index.html">Overview</a>

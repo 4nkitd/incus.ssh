@@ -29,19 +29,14 @@ These are VM-like **Linux containers with a shared kernel**, not hardware VMs or
 
 ## SSH from a CLI agent
 
-On v0.5.1, an agent can already send a local script to a running guest without entering the management prompt:
-
-```sh
-ssh -T -o BatchMode=yes -p 2222 dev@GATEWAY ssh melon sh -s < check.sh
-```
-
-The **unreleased gateway** also accepts `USER+CONTAINER@GATEWAY`. Once the gateway host key is trusted, OpenCode or any other CLI can use plain SSH:
+On v0.6.0, OpenCode or any CLI can run a command in a running guest. Verify the gateway host key before using batch mode:
 
 ```sh
 ssh -T -o BatchMode=yes -p 2222 dev+melon@GATEWAY 'cd /root/project && make test'
+ssh -T -o BatchMode=yes -p 2222 dev+melon@GATEWAY sh -s < check.sh
 ```
 
-Without a PTY, stdout and stderr stay separate and `ssh` returns the guest command's exit code. [Set up a short SSH alias and reuse connections](docs/docs.html#agent-ssh).
+Without a PTY, stdout and stderr stay separate and `ssh` returns the guest command's exit code. [Set up a short SSH alias and reuse connections](https://4nkitd.github.io/incus.ssh/docs.html#agent-ssh).
 
 ## Hosting panel (`/ui`)
 
@@ -57,7 +52,7 @@ Deploy OCI images from Docker Hub or approved HTTPS registries, launch Kali, Alp
 
 [Website](https://4nkitd.github.io/incus.ssh/) · [Documentation](https://4nkitd.github.io/incus.ssh/docs.html) · [Releases](https://github.com/4nkitd/incus.ssh/releases) · [Issues](https://github.com/4nkitd/incus.ssh/issues) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [MIT license](LICENSE)
 
-Current release: [v0.5.1](https://github.com/4nkitd/incus.ssh/releases/tag/v0.5.1). SCP/SFTP needs a guest SFTP server. [Explicit per-port HTTPS sharing](https://4nkitd.github.io/incus.ssh/docs.html#sharing) is opt-in and experimental. The executable and service are named `incus-for-devs`.
+Current release: [v0.6.0](https://github.com/4nkitd/incus.ssh/releases/tag/v0.6.0). SCP/SFTP needs a guest SFTP server. [Explicit per-port HTTPS sharing](https://4nkitd.github.io/incus.ssh/docs.html#sharing) is opt-in and experimental. The executable and service are named `incus-for-devs`.
 
 [Token-protected REST and HTTP MCP](docs/api.md) manage containers and guest commands. Access is disabled until the user generates a token over SSH. Caddy HTTPS setup is opt-in.
 

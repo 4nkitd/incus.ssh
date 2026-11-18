@@ -3,8 +3,8 @@ set -euo pipefail
 umask 077
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
-version=v0.5.1
-archive_sha256=771a0fa9f03206c7b2928898b6feff14f57ccef36da3152be2257eec32ff9e7a
+version=v0.6.0
+archive_sha256=8b43dcf2b2cf5981b64ef8be19f9692b09200e2abb2cfe3a78bdea5c9d038354
 repo=https://github.com/4nkitd/incus.ssh
 config=/etc/incus-for-devs/config.json
 state=/var/lib/incus-for-devs
@@ -28,7 +28,7 @@ Options:
   --yes               Confirm noninteractive setup; requires --ssh-key-file.
   --help              Show this help without changing anything.
 
-Installs released v0.5.1, Incus, a private SSH gateway, a directory pool,
+Installs released v0.6.0, Incus, a private SSH gateway, a directory pool,
 a managed bridge, a cached Ubuntu image and one restricted user/project.
 Never upgrades or restarts an existing gateway. No guest port is published.
 USAGE

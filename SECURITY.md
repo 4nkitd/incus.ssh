@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Version 0.5.1 is the current release. It adds an interactive browser terminal and direct table actions on top of v0.5.0's bearer-authenticated REST/MCP, hosting UI and native OCI application support. Release builds use Go 1.27.4 or newer, fixing standard-library advisory `GO-2026-6859`. Public hosted OpenTunnel API/ACME behavior and long-lived renewal are not yet verified. Security fixes target the current `main` branch.
+Version 0.6.0 is the current release. A direct SSH login (`USER+NAME`) selects a guest; it does not restrict the user's key to that guest. The same key still grants management access as `USER`. Release builds use Go 1.27.4 or newer, fixing standard-library advisory `GO-2026-6859`. Public hosted OpenTunnel API/ACME behavior and long-lived renewal are not yet verified. Security fixes target the current `main` branch.
 
 ## Reporting a vulnerability
 

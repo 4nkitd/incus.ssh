@@ -1,5 +1,9 @@
 # Verification records
 
+## v0.6.0 direct guest SSH
+
+The Linux amd64 builder passed `go test -race -count=1 ./...`, `go vet ./...` and `go mod verify` with Go 1.27.4. Transport tests used a loopback gateway and a fake backend. A stock OpenSSH client verified binary stdin/stdout, separate stderr and exit code 37. Other tests covered guest selection, wrong keys, ownership, shell versus exec and rejection of the management SFTP subsystem on direct logins. The opt-in native Incus QA suite was not enabled on this builder.
+
 ## v0.5.1 browser terminal checkpoint, November 11-12, 2026
 
 The v0.5.1 terminal and table-action changes were tested on an approved disposable Ubuntu host with Incus 7.0.2 and Go 1.27.4. Production credentials and data were not copied to it.
