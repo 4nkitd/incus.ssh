@@ -712,6 +712,8 @@ func (b *memoryBackend) Exec(ctx context.Context, p core.Principal, name, comman
 	b.exec = execCall{p, name, command, input, streams.PTY}
 	b.mu.Unlock()
 	switch command {
+	case "", ":":
+		return 0, nil
 	case binaryCommand:
 		if _, err := streams.Out.Write(append([]byte{'o', 'u', 't', 0, 255}, input...)); err != nil {
 			return 1, err

@@ -6,9 +6,14 @@ import (
 	"errors"
 	"io"
 	"math/big"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+var instanceName = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+func ValidInstance(name string) bool { return instanceName.MatchString(name) }
 
 var fruits = []string{
 	"apple", "apricot", "banana", "blackberry", "blueberry", "cherry",

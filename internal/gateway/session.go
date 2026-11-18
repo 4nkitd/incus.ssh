@@ -28,7 +28,7 @@ func (w lockedWriter) Write(data []byte) (int, error) {
 	return w.writer.Write(data)
 }
 
-func serveSession(ctx context.Context, channel ssh.Channel, requests <-chan *ssh.Request, principal core.Principal, handler core.Handler, closeConnection func() error) {
+func serveSession(ctx context.Context, channel ssh.Channel, requests <-chan *ssh.Request, principal core.Principal, guest string, handler core.Handler, closeConnection func() error) {
 	ctx, cancel := context.WithCancel(ctx)
 	teardownDone, closeDone := make(chan struct{}), make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
@@ -121,8 +121,12 @@ func serveSession(ctx context.Context, channel ssh.Channel, requests <-chan *ssh
 					}
 				case "exec":
 					var p struct{ Command string }
-					if !started && ssh.Unmarshal(request.Payload, &p) == nil && len(p.Command) <= maxCommandLength {
+					if !started && ssh.Unmarshal(request.Payload, &p) == nil && len(p.Command) <= maxCommandLength && (guest == "" || !strings.ContainsRune(p.Command, 0)) {
 						accepted, start, command = true, true, p.Command
+						if guest != "" && command == "" {
+							// An empty exec must not open a shell that reads stdin.
+							command = ":"
+						}
 					}
 				case "shell":
 					if !started && len(request.Payload) == 0 {
@@ -131,7 +135,7 @@ func serveSession(ctx context.Context, channel ssh.Channel, requests <-chan *ssh
 				case "subsystem":
 					var p struct{ Name string }
 					support, ok := handler.(core.SubsystemHandler)
-					if !started && !streams.PTY && ok && ssh.Unmarshal(request.Payload, &p) == nil && support.SupportsSubsystem(p.Name) {
+					if guest == "" && !started && !streams.PTY && ok && ssh.Unmarshal(request.Payload, &p) == nil && support.SupportsSubsystem(p.Name) {
 						accepted, start, subsystem = true, true, p.Name
 					}
 				case "env", "auth-agent-req@openssh.com", "x11-req":
@@ -140,7 +144,7 @@ func serveSession(ctx context.Context, channel ssh.Channel, requests <-chan *ssh
 			}
 			commandStreams := streams
 			var finish func()
-			if start && !shell {
+			if start && (!shell || guest != "") {
 				commandStreams, finish = managed.begin(streams)
 			}
 			if err := request.Reply(accepted, nil); err != nil {
@@ -154,7 +158,11 @@ func serveSession(ctx context.Context, channel ssh.Channel, requests <-chan *ssh
 				running.Add(1)
 				go func(streams core.Streams, command string, shell bool, subsystem string, finish func()) {
 					defer running.Done()
-					if shell {
+					if guest != "" {
+						code := handler.(core.GuestHandler).HandleGuest(ctx, principal, guest, command, streams)
+						finish()
+						result <- code
+					} else if shell {
 						result <- repl(ctx, principal, managed, streams)
 					} else if subsystem != "" {
 						code := handler.(core.SubsystemHandler).Subsystem(ctx, principal, subsystem, streams)

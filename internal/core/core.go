@@ -82,6 +82,10 @@ type Handler interface {
 	Handle(context.Context, Principal, string, Streams) int
 }
 
+type GuestHandler interface {
+	HandleGuest(ctx context.Context, principal Principal, name, command string, streams Streams) int
+}
+
 type APIStatus struct {
 	Enabled bool   `json:"enabled"`
 	REST    string `json:"rest_url"`

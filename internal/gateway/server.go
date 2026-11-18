@@ -15,6 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"incus-for-devs/internal/core"
+	"incus-for-devs/internal/names"
 )
 
 type AuthorizedUser struct {
@@ -87,13 +88,15 @@ func serverConfig(cfg Config) (*ssh.ServerConfig, map[string]core.Principal, int
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("parse SSH host key: %w", err)
 	}
+	_, supportsGuests := cfg.Handler.(core.GuestHandler)
 	config := &ssh.ServerConfig{
 		MaxAuthTries: 3,
 		PublicKeyCallback: func(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-			if !keys[conn.User()][string(key.Marshal())] {
+			user, guest, direct := strings.Cut(conn.User(), "+")
+			if !keys[user][string(key.Marshal())] || (direct && (!supportsGuests || !names.ValidInstance(guest))) {
 				return nil, errors.New("public key authentication denied")
 			}
-			return &ssh.Permissions{}, nil
+			return &ssh.Permissions{Extensions: map[string]string{"user": user, "guest": guest}}, nil
 		},
 	}
 	config.AddHostKey(signer)
@@ -239,6 +242,11 @@ func serveConnection(ctx context.Context, raw net.Conn, config *ssh.ServerConfig
 		return
 	}
 	defer conn.Close()
+	principal, ok := principals[conn.Permissions.Extensions["user"]]
+	if !ok {
+		return
+	}
+	guest := conn.Permissions.Extensions["guest"]
 	if err := raw.SetDeadline(time.Time{}); err != nil {
 		return
 	}
@@ -282,7 +290,7 @@ func serveConnection(ctx context.Context, raw net.Conn, config *ssh.ServerConfig
 		go func() {
 			defer workers.Done()
 			defer func() { <-slots }()
-			serveSession(ctx, channel, reqs, principals[conn.User()], handler, conn.Close)
+			serveSession(ctx, channel, reqs, principal, guest, handler, conn.Close)
 		}()
 	}
 }

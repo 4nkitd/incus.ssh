@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"incus-for-devs/internal/core"
+	"incus-for-devs/internal/names"
 )
 
 func (h Handler) api(p core.Principal, r request, s core.Streams) int {
@@ -24,7 +25,7 @@ func (h Handler) api(p core.Principal, r request, s core.Streams) int {
 }
 
 func ValidateName(name string) error {
-	if !namePattern.MatchString(name) {
+	if !names.ValidInstance(name) {
 		return errors.New("invalid instance name")
 	}
 	return nil

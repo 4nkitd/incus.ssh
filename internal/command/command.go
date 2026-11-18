@@ -16,6 +16,7 @@ import (
 	"github.com/google/shlex"
 
 	"incus-for-devs/internal/core"
+	"incus-for-devs/internal/names"
 	"incus-for-devs/internal/terminal"
 )
 
@@ -36,7 +37,6 @@ type Handler struct {
 
 var _ core.Handler = (*Handler)(nil)
 
-var namePattern = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$`)
 var sizePattern = regexp.MustCompile(`^([0-9]+)(B|kB|KB|MB|GB|TB|KiB|MiB|GiB|TiB)$`)
 var filterPattern = regexp.MustCompile(`^[a-zA-Z0-9*?\[\]!^-]+$`)
 
@@ -156,13 +156,20 @@ func (h Handler) Handle(ctx context.Context, p core.Principal, line string, s co
 	case "restart":
 		return h.lifecycle(ctx, p, r, s, "restarted", h.Backend.Restart)
 	case "ssh":
-		status, err := h.Backend.Exec(ctx, p, r.args[0], r.remote, execStreams)
-		if err != nil {
-			return failure(s, false, err)
-		}
-		return status
+		return h.HandleGuest(ctx, p, r.args[0], r.remote, execStreams)
 	}
 	return failure(s, r.json, errors.New("unsupported command"))
+}
+
+func (h Handler) HandleGuest(ctx context.Context, p core.Principal, name, command string, streams core.Streams) int {
+	if h.Backend == nil {
+		return failure(streams, false, errors.New("backend is not configured"))
+	}
+	status, err := h.Backend.Exec(ctx, p, name, command, streams)
+	if err != nil {
+		return failure(streams, false, err)
+	}
+	return status
 }
 
 // imageList is read-only: image cache mutations stay administrator work on the
@@ -331,7 +338,7 @@ func parse(line string) (request, error) {
 		if err != nil {
 			return r, err
 		}
-		if !namePattern.MatchString(name) {
+		if !names.ValidInstance(name) {
 			return r, errors.New("ssh requires a valid instance name before the remote command")
 		}
 		r.args = []string{name}
@@ -366,7 +373,7 @@ func parse(line string) (request, error) {
 		case word == "new" && hasValue:
 			switch flag {
 			case "--name":
-				if !namePattern.MatchString(value) {
+				if !names.ValidInstance(value) {
 					return r, invalidName(value)
 				}
 				r.create.Name = value
@@ -435,15 +442,15 @@ func parse(line string) (request, error) {
 		if word != "rm" && len(r.args) != 1 {
 			return r, fmt.Errorf("%s requires exactly one name", word)
 		}
-		names := make(map[string]bool)
+		seenNames := make(map[string]bool)
 		for _, name := range r.args {
-			if !namePattern.MatchString(name) {
+			if !names.ValidInstance(name) {
 				return r, invalidName(name)
 			}
-			if names[name] {
+			if seenNames[name] {
 				return r, fmt.Errorf("duplicate instance name %q", name)
 			}
-			names[name] = true
+			seenNames[name] = true
 		}
 	case "image":
 		if len(r.args) == 0 {

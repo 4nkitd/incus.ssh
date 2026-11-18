@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"incus-for-devs/internal/core"
+	"incus-for-devs/internal/names"
 )
 
 const shareUsage = "usage: share enable NAME PORT | share disable NAME PORT | share list [NAME] [--json]"
@@ -16,7 +17,7 @@ func validateShareArgs(args []string) error {
 	}
 	switch args[0] {
 	case "enable", "disable":
-		if len(args) != 3 || !namePattern.MatchString(args[1]) {
+		if len(args) != 3 || !names.ValidInstance(args[1]) {
 			return errors.New(shareUsage)
 		}
 		port, err := positiveInteger(args[2])
@@ -24,7 +25,7 @@ func validateShareArgs(args []string) error {
 			return errors.New("share requires exactly one numeric port from 1 to 65535")
 		}
 	case "list":
-		if len(args) > 2 || (len(args) == 2 && !namePattern.MatchString(args[1])) {
+		if len(args) > 2 || (len(args) == 2 && !names.ValidInstance(args[1])) {
 			return errors.New(shareUsage)
 		}
 	default:

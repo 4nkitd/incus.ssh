@@ -164,7 +164,7 @@ func TestSessionTeardownStopsPumpWhenPeerIgnoresChannelClose(t *testing.T) {
 	closedConnection, done := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(done)
-		serveSession(ctx, channel, requests, core.Principal{}, handlerFunc(func(context.Context, core.Principal, string, core.Streams) int { return 0 }), func() error {
+		serveSession(ctx, channel, requests, core.Principal{}, "", handlerFunc(func(context.Context, core.Principal, string, core.Streams) int { return 0 }), func() error {
 			close(closedConnection)
 			return source.Close()
 		})

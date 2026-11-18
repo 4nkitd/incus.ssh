@@ -27,6 +27,22 @@ Linux
 
 These are VM-like **Linux containers with a shared kernel**, not hardware VMs or a hostile-tenant isolation boundary. You own backups, network policy and uptime.
 
+## SSH from a CLI agent
+
+On v0.5.1, an agent can already send a local script to a running guest without entering the management prompt:
+
+```sh
+ssh -T -o BatchMode=yes -p 2222 dev@GATEWAY ssh melon sh -s < check.sh
+```
+
+The **unreleased gateway** also accepts `USER+CONTAINER@GATEWAY`. Once the gateway host key is trusted, OpenCode or any other CLI can use plain SSH:
+
+```sh
+ssh -T -o BatchMode=yes -p 2222 dev+melon@GATEWAY 'cd /root/project && make test'
+```
+
+Without a PTY, stdout and stderr stay separate and `ssh` returns the guest command's exit code. [Set up a short SSH alias and reuse connections](docs/docs.html#agent-ssh).
+
 ## Hosting panel (`/ui`)
 
 Deploy OCI images from Docker Hub or approved HTTPS registries, launch Kali, Alpine, Go, PHP CLI and Python development boxes, inspect live CPU/memory/storage counters, edit environment variables and open an interactive guest terminal in the browser.

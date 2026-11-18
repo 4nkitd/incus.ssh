@@ -105,6 +105,15 @@ func TestNativeIncusSCPAndPrivateRelay(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
+	direct, err := ssh.Dial("tcp", listener.Addr().String(), &ssh.ClientConfig{User: p.Name + "+" + name, Auth: []ssh.AuthMethod{ssh.PublicKeys(key.signer)}, HostKeyCallback: ssh.FixedHostKey(host.signer.PublicKey()), Timeout: 10 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer direct.Close()
+	script := []byte("printf '%s\\n' \"$(hostname)\"\nprintf 'guest stderr' >&2\nexit 37\n")
+	if r := run(t, direct, "sh -s", script, 37); r.out != name+"\n" || r.err != "guest stderr" {
+		t.Fatalf("direct SSH script: %+v", r)
+	}
 	files, err := sftp.NewClient(client)
 	if err != nil {
 		t.Fatal(err)

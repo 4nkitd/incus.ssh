@@ -28,7 +28,7 @@ var commands = []helpCommand{
 	{"stop", "stop NAME [--json]", "Gracefully stop an owned container; its data is preserved, running processes are not."},
 	{"restart", "restart NAME [--json]", "Gracefully restart an owned container; its data is preserved."},
 	{"resume", "resume NAME [--json]", "Alias of start; the container's data is preserved."},
-	{"ssh", "ssh NAME [COMMAND...]", "Open an interactive container shell or run one command inside it. Remote options, including --json, belong to the remote command."},
+	{"ssh", "ssh NAME [COMMAND...]", "Open a container shell or run a guest command. From OpenSSH, use ssh -p PORT USER+NAME@GATEWAY [COMMAND] to skip the management prompt. Remote options, including --json, belong to the guest."},
 }
 
 const (

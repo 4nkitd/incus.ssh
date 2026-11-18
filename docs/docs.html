@@ -188,6 +188,31 @@ ssh melon 'cd /root/project &amp;&amp; ls -la'</pre>
       <code>/bin/sh -lc</code> inside the guest. Input, output, error output and exit status pass through. A minimal image
       without <code>/bin/sh</code> cannot run these shell commands.</p>
 
+    <h3 id="agent-ssh">Direct SSH for CLI agents (unreleased)</h3>
+    <p>Use <code>USER+NAME@GATEWAY</code> to send shell and exec requests to one running guest. No guest IP, SSH daemon or API token is needed.
+      The username before <code>+</code> and its registered key still select the project. Omitting <code>+NAME</code> keeps the management prompt.
+      The alias does not restrict the key: anyone holding it can still use that user's management login.</p>
+    <p>Verify the gateway host key with your operator before using batch mode. Add this entry to <code>~/.ssh/config</code>,
+      replacing <code>GATEWAY</code>, <code>dev</code> and <code>melon</code> with your gateway, user and container:</p>
+<pre class="block" tabindex="0">Host melon-dev
+    HostName GATEWAY
+    Port 2222
+    User dev+melon
+    BatchMode yes
+    StrictHostKeyChecking yes
+    ControlMaster auto
+    ControlPath ~/.ssh/incus-%C
+    ControlPersist 60</pre>
+    <p>Ask your CLI agent to run builds or checks with this alias. Each call starts a new guest shell, so set the working directory in the command.
+      The control socket reuses the connection, not the shell. Keep the socket inside your private <code>~/.ssh</code> directory;
+      <code>%C</code> includes the remote user, so aliases for different guests do not share a session.</p>
+<pre class="block" tabindex="0">ssh -T melon-dev 'cd /root/project &amp;&amp; make test'
+ssh -T melon-dev sh -s &lt; check.sh
+ssh melon-dev</pre>
+    <p>The last line opens a guest shell from a terminal. For automation use <code>-T</code> so stdout, stderr and the exit status reach the caller without a prompt.
+      For SCP/SFTP use the <a href="#files">management login and NAME/path syntax</a>; direct guest logins accept shell and exec only.
+      On v0.5.1 use <code>ssh -T -p 2222 dev@GATEWAY ssh melon sh -s &lt; check.sh</code> instead.</p>
+
     <h2 id="lifecycle">Stop, start and keep your files</h2>
 <pre class="block" tabindex="0">stop melon
 start melon
@@ -748,7 +773,7 @@ INCUS_FOR_DEVS_TARGET=your-ssh-alias ./bin/incus-for-devs ls --json</pre>
           <tr><th scope="row">HTTPS sharing</th><td><a href="#sharing">Explicit per-machine, per-port experimental feature</a>. Opt-in only; hosted verification remains pending.</td></tr>
           <tr><th scope="row">Docker, nested containers</th><td>Not supported. The project and profile block nesting and low-level configuration.</td></tr>
           <tr><th scope="row">Direct host-port forwarding</th><td>Unsupported. HTTPS publishing does not enable SSH TCP forwarding or arbitrary host targets.</td></tr>
-          <tr><th scope="row">Direct guest hostnames</th><td>Not implemented. Use <code>ssh NAME</code> through the gateway.</td></tr>
+          <tr><th scope="row">Direct guest hostnames</th><td>No per-guest DNS or SSH listener. Use <code>ssh NAME</code> through the gateway, or <a href="#agent-ssh">a guest SSH alias</a> with an unreleased gateway build.</td></tr>
           <tr><th scope="row">OVN networks</th><td>Not supported. Setup accepts only a managed bridge network.</td></tr>
           <tr><th scope="row">Multiuser</th><td>Exactly one configured app user.</td></tr>
           <tr><th scope="row">Custom images, profiles, projects</th><td>Profiles and projects are operator-only. The operator caches predefined images with local operator mode or native Incus; clients may select a cached image, but cannot change the cache.</td></tr>
